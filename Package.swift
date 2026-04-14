@@ -15,43 +15,18 @@ let package = Package(
             path: "Packages/SixthSenseCore/Sources/SixthSenseCore"
         ),
 
-        // Shared services (camera, network, overlay, accessibility, input, permissions)
+        // Shared services (camera, overlay, accessibility, input, permissions)
         .target(
             name: "SharedServices",
             dependencies: ["SixthSenseCore"],
             path: "Packages/SharedServices/Sources/SharedServices"
         ),
 
-        // Feature modules
+        // HandCommand — the only feature module.
         .target(
             name: "HandCommandModule",
             dependencies: ["SixthSenseCore", "SharedServices"],
             path: "Packages/HandCommandModule/Sources/HandCommandModule"
-        ),
-        .target(
-            name: "GazeShiftModule",
-            dependencies: ["SixthSenseCore", "SharedServices"],
-            path: "Packages/GazeShiftModule/Sources/GazeShiftModule"
-        ),
-        .target(
-            name: "AirCursorModule",
-            dependencies: ["SixthSenseCore", "SharedServices"],
-            path: "Packages/AirCursorModule/Sources/AirCursorModule"
-        ),
-        .target(
-            name: "PortalViewModule",
-            dependencies: ["SixthSenseCore", "SharedServices"],
-            path: "Packages/PortalViewModule/Sources/PortalViewModule"
-        ),
-        .target(
-            name: "GhostDropModule",
-            dependencies: ["SixthSenseCore", "SharedServices"],
-            path: "Packages/GhostDropModule/Sources/GhostDropModule"
-        ),
-        .target(
-            name: "NotchBarModule",
-            dependencies: ["SixthSenseCore", "SharedServices"],
-            path: "Packages/NotchBarModule/Sources/NotchBarModule"
         ),
 
         // Main app executable
@@ -61,18 +36,12 @@ let package = Package(
                 "SixthSenseCore",
                 "SharedServices",
                 "HandCommandModule",
-                "GazeShiftModule",
-                "AirCursorModule",
-                "PortalViewModule",
-                "GhostDropModule",
-                "NotchBarModule",
             ],
             path: "SixthSenseApp",
             exclude: ["Resources/Info.plist"]
         ),
 
-        // Test mocks shared by module test targets. Regular target (not test)
-        // so multiple test targets can depend on it.
+        // Test mocks shared between test targets.
         .target(
             name: "SharedServicesMocks",
             dependencies: ["SharedServices", "SixthSenseCore"],
@@ -94,31 +63,6 @@ let package = Package(
             name: "HandCommandModuleTests",
             dependencies: ["HandCommandModule", "SixthSenseCore", "SharedServices", "SharedServicesMocks"],
             path: "Packages/HandCommandModule/Tests/HandCommandModuleTests"
-        ),
-        .testTarget(
-            name: "GazeShiftModuleTests",
-            dependencies: ["GazeShiftModule", "SixthSenseCore", "SharedServices", "SharedServicesMocks"],
-            path: "Packages/GazeShiftModule/Tests/GazeShiftModuleTests"
-        ),
-        .testTarget(
-            name: "AirCursorModuleTests",
-            dependencies: ["AirCursorModule", "SixthSenseCore", "SharedServices", "SharedServicesMocks"],
-            path: "Packages/AirCursorModule/Tests/AirCursorModuleTests"
-        ),
-        .testTarget(
-            name: "PortalViewModuleTests",
-            dependencies: ["PortalViewModule", "SixthSenseCore", "SharedServices", "SharedServicesMocks"],
-            path: "Packages/PortalViewModule/Tests/PortalViewModuleTests"
-        ),
-        .testTarget(
-            name: "GhostDropModuleTests",
-            dependencies: ["GhostDropModule", "SixthSenseCore", "SharedServices", "SharedServicesMocks"],
-            path: "Packages/GhostDropModule/Tests/GhostDropModuleTests"
-        ),
-        .testTarget(
-            name: "NotchBarModuleTests",
-            dependencies: ["NotchBarModule", "SixthSenseCore"],
-            path: "Packages/NotchBarModule/Tests/NotchBarModuleTests"
         ),
     ]
 )

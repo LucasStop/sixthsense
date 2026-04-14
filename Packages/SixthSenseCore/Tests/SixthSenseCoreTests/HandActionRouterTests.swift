@@ -339,9 +339,12 @@ private func reading(
 
     // Should have BOTH a moveCursor (from right) AND a click (from left
     // transition), and the click should be at the right hand's index tip.
+    // Tolerance accounts for the cursor smoother's floating-point math.
     #expect(actions.contains { if case .moveCursor = $0 { return true }; return false })
     #expect(actions.contains { action in
-        if case .click(let p) = action { return p.x == 0.6 && p.y == 0.3 }
+        if case .click(let p) = action {
+            return abs(p.x - 0.6) < 0.001 && abs(p.y - 0.3) < 0.001
+        }
         return false
     })
 }

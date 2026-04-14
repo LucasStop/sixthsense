@@ -12,7 +12,7 @@ import CoreGraphics
     let c2 = bus.publisher.sink { _ in secondReceived += 1 }
 
     bus.emit(.handTrackingLost)
-    bus.emit(.gazeCalibrationCompleted)
+    bus.emit(.handTrackingLost)
 
     try? await Task.sleep(for: .milliseconds(50))
 
@@ -47,52 +47,14 @@ import CoreGraphics
         return false
     }).sink { _ in handEvents += 1 }
 
-    bus.emit(.gazeCalibrationCompleted)
+    bus.emit(.handTrackingLost)
     bus.emit(.handGestureDetected(.pinch(phase: .began, position: .zero)))
-    bus.emit(.gazePointUpdated(.zero))
-    bus.emit(.handGestureDetected(.swipe(direction: .left, velocity: 1.0)))
+    bus.emit(.handTrackingLost)
+    bus.emit(.handGestureDetected(.grab(phase: .began, position: .zero)))
 
     try? await Task.sleep(for: .milliseconds(50))
 
     #expect(handEvents == 2)
-    _ = cancellable
-}
-
-@Test func gazePointUpdatedPreservesCoordinates() async {
-    let bus = EventBus()
-    var captured: CGPoint?
-
-    let cancellable = bus.publisher.sink { event in
-        if case .gazePointUpdated(let point) = event {
-            captured = point
-        }
-    }
-
-    bus.emit(.gazePointUpdated(CGPoint(x: 123, y: 456)))
-    try? await Task.sleep(for: .milliseconds(50))
-
-    #expect(captured?.x == 123)
-    #expect(captured?.y == 456)
-    _ = cancellable
-}
-
-@Test func deviceConnectedPreservesPayload() async {
-    let bus = EventBus()
-    var capturedId: String?
-    var capturedName: String?
-
-    let cancellable = bus.publisher.sink { event in
-        if case .deviceConnected(let deviceId, let name) = event {
-            capturedId = deviceId
-            capturedName = name
-        }
-    }
-
-    bus.emit(.deviceConnected(deviceId: "iphone-abc", name: "iPhone 15"))
-    try? await Task.sleep(for: .milliseconds(50))
-
-    #expect(capturedId == "iphone-abc")
-    #expect(capturedName == "iPhone 15")
     _ = cancellable
 }
 
@@ -107,13 +69,14 @@ import CoreGraphics
     }
 }
 
-@Test func handGestureSwipeStoresDirectionAndVelocity() {
-    let gesture = HandGesture.swipe(direction: .right, velocity: 2.5)
-    if case .swipe(let direction, let velocity) = gesture {
-        #expect(direction == .right)
-        #expect(velocity == 2.5)
+@Test func handGestureGrabStoresPhaseAndPosition() {
+    let gesture = HandGesture.grab(phase: .changed, position: CGPoint(x: 5, y: 6))
+    if case .grab(let phase, let position) = gesture {
+        #expect(phase == .changed)
+        #expect(position.x == 5)
+        #expect(position.y == 6)
     } else {
-        Issue.record("Expected swipe gesture")
+        Issue.record("Expected grab gesture")
     }
 }
 
@@ -125,9 +88,4 @@ import CoreGraphics
 @Test func gesturePhaseHasExpectedCases() {
     let phases: [GesturePhase] = [.began, .changed, .ended, .cancelled]
     #expect(phases.count == 4)
-}
-
-@Test func clipboardContentTypeHasAllCases() {
-    let types: [ClipboardContentType] = [.text, .image, .file, .richContent]
-    #expect(types.count == 4)
 }

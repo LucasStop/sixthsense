@@ -1,14 +1,13 @@
 import Foundation
 import CoreMedia
 import CoreGraphics
-import Combine
 import ApplicationServices
 
 // MARK: - Camera Pipeline
 
-/// Abstraction over the shared camera pipeline. Modules that need video frames
-/// depend on this protocol rather than the concrete CameraManager, so tests
-/// can inject a mock pipeline that never touches AVFoundation.
+/// Abstraction over the shared camera pipeline. HandCommandModule depends
+/// on this protocol rather than the concrete CameraManager, so tests can
+/// inject a mock pipeline that never touches AVFoundation.
 @MainActor
 public protocol CameraPipeline: AnyObject {
     func subscribe(id: String, handler: @escaping @Sendable (CMSampleBuffer) -> Void)
@@ -37,10 +36,8 @@ extension CursorController: MouseController {}
 
 // MARK: - Keyboard Input
 
-/// Abstraction over synthetic keyboard event injection. Used by
-/// HandCommandModule to translate left-hand gestures into global shortcuts
-/// (Mission Control, Show Desktop, switch Space, modifier holds). Tests
-/// record calls instead of invoking CGEvent.
+/// Abstraction over synthetic keyboard event injection. Reserved for future
+/// keyboard-bound gestures. Tests record calls instead of invoking CGEvent.
 public protocol KeyboardInput: Sendable {
     func pressKey(keyCode: CGKeyCode, modifiers: CGEventFlags)
     func holdKey(keyCode: CGKeyCode, modifiers: CGEventFlags)
@@ -62,27 +59,6 @@ public protocol WindowAccessibility {
 }
 
 extension AccessibilityService: WindowAccessibility {}
-
-// MARK: - Peer Network
-
-/// Abstraction over Bonjour-based device discovery and peer messaging. Tests
-/// use a mock that publishes messages through a controlled subject without
-/// touching the real network stack.
-@MainActor
-public protocol PeerNetwork: AnyObject {
-    var isAdvertising: Bool { get }
-    var isBrowsing: Bool { get }
-    var discoveredPeers: [DiscoveredPeer] { get }
-    var messagePublisher: AnyPublisher<PeerMessage, Never> { get }
-    func startAdvertising(name: String, port: UInt16) throws
-    func stopAdvertising()
-    func startBrowsing()
-    func stopBrowsing()
-    func connect(to peer: DiscoveredPeer)
-    func send(data: Data, to peerId: String)
-}
-
-extension BonjourService: PeerNetwork {}
 
 // MARK: - Overlay Presenter
 
