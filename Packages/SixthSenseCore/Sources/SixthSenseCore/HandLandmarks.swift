@@ -47,8 +47,11 @@ public struct HandLandmark: Sendable, Hashable {
     }
 
     /// Whether this landmark is confident enough to trust in gesture classification.
+    /// Threshold is intentionally permissive — Vision often reports useful joint
+    /// positions at 0.3-0.5 when the hand is partially turned or lit indirectly,
+    /// and discarding those frames makes the classifier feel "stuck".
     public var isConfident: Bool {
-        confidence > 0.5
+        confidence >= 0.3
     }
 }
 

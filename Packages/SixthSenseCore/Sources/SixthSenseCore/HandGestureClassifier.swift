@@ -6,70 +6,95 @@ import CoreGraphics
 /// Classifies a HandLandmarksSnapshot into a high-level DetectedHandGesture.
 ///
 /// This is pure, deterministic geometry — no Vision dependency, no camera, no
-/// side effects — so it is trivially unit-testable. The real hand-tracking
-/// pipeline feeds snapshots in, and the UI reads the resulting gesture label.
+/// side effects — so it is trivially unit-testable.
+///
+/// The classifier is **scale-invariant**: instead of comparing absolute
+/// distances to hardcoded thresholds, it normalizes every fingertip distance
+/// by the longest one in the snapshot. That way the same gesture is
+/// recognized whether the hand is close to the camera (large in frame) or
+/// far away (small in frame).
 public enum HandGestureClassifier {
 
-    /// Distance below which the thumb tip and index tip are considered pinched.
-    public static let pinchThreshold: CGFloat = 0.06
+    // MARK: - Tunable ratios
 
-    /// Distance above which a fingertip is considered "extended" away from the wrist.
-    public static let extendedThreshold: CGFloat = 0.30
+    /// Fraction of the longest fingertip distance at which thumb/index count
+    /// as pinched. Lower = tighter pinch required.
+    public static let pinchRatio: CGFloat = 0.35
 
-    /// Distance below which a fingertip is considered "curled" toward the palm.
-    public static let curledThreshold: CGFloat = 0.20
+    /// Fraction of the longest fingertip distance at which a finger is
+    /// considered "extended". Anything above this is open.
+    public static let extendedRatio: CGFloat = 0.85
 
-    /// Classify a snapshot. Returns `.none` if the snapshot lacks enough confident
-    /// joints to make any judgment.
+    /// Fraction of the longest fingertip distance below which a finger is
+    /// considered "curled" into the palm.
+    public static let curledRatio: CGFloat = 0.72
+
+    /// Minimum absolute hand "size" before we bother classifying.
+    /// Protects against noise when only a tiny fragment of a hand is visible.
+    public static let minHandSize: CGFloat = 0.06
+
+    // MARK: - Classify
+
     public static func classify(_ snapshot: HandLandmarksSnapshot) -> DetectedHandGesture {
-        // Need the wrist and all five fingertips at high confidence.
+        // We need wrist + all five fingertips at reasonable confidence.
         let required: [HandJoint] = [.wrist] + HandJoint.fingertips
         guard snapshot.hasConfidentJoints(required) else {
             return .none
         }
 
-        guard let wrist = snapshot.position(of: .wrist),
-              let thumb = snapshot.position(of: .thumbTip),
-              let index = snapshot.position(of: .indexTip),
+        guard let wrist  = snapshot.position(of: .wrist),
+              let thumb  = snapshot.position(of: .thumbTip),
+              let index  = snapshot.position(of: .indexTip),
               let middle = snapshot.position(of: .middleTip),
-              let ring = snapshot.position(of: .ringTip),
+              let ring   = snapshot.position(of: .ringTip),
               let little = snapshot.position(of: .littleTip) else {
             return .none
         }
 
-        // Pinch: thumb and index tips are very close together.
-        let thumbIndexDistance = distance(thumb, index)
-        if thumbIndexDistance < pinchThreshold {
-            return .pinch
-        }
-
+        let thumbDist  = distance(wrist, thumb)
         let indexDist  = distance(wrist, index)
         let middleDist = distance(wrist, middle)
         let ringDist   = distance(wrist, ring)
         let littleDist = distance(wrist, little)
 
-        let extendedFingers = [indexDist, middleDist, ringDist, littleDist]
-            .filter { $0 > extendedThreshold }
-            .count
-        let curledFingers = [indexDist, middleDist, ringDist, littleDist]
-            .filter { $0 < curledThreshold }
-            .count
+        let maxDist = max(thumbDist, indexDist, middleDist, ringDist, littleDist)
+        guard maxDist > minHandSize else { return .none }
 
-        // Pointing: only the index is extended, the others are curled.
-        if indexDist > extendedThreshold &&
-           middleDist < curledThreshold &&
-           ringDist < curledThreshold &&
-           littleDist < curledThreshold {
+        // Pinch — check first because a tight thumb/index pinch overrides
+        // any other interpretation of the hand pose.
+        let thumbIndexDistance = distance(thumb, index)
+        if thumbIndexDistance < pinchRatio * maxDist {
+            return .pinch
+        }
+
+        // Ratios of each finger to the longest one in the hand.
+        let relIndex  = indexDist  / maxDist
+        let relMiddle = middleDist / maxDist
+        let relRing   = ringDist   / maxDist
+        let relLittle = littleDist / maxDist
+
+        let nonThumbFingers = [relIndex, relMiddle, relRing, relLittle]
+        let extendedCount = nonThumbFingers.filter { $0 >= extendedRatio }.count
+        let curledCount   = nonThumbFingers.filter { $0 <= curledRatio }.count
+
+        // Pointing — index clearly longer than the other three fingers.
+        // We use a slightly looser test (>= curledRatio) to tolerate real
+        // hands where middle/ring don't curl all the way.
+        if relIndex >= extendedRatio &&
+           relMiddle < extendedRatio &&
+           relRing   < extendedRatio &&
+           relLittle < extendedRatio &&
+           relIndex > relMiddle + 0.05 {
             return .pointing
         }
 
-        // Open hand: all four non-thumb fingers extended.
-        if extendedFingers == 4 {
+        // Open hand — all four non-thumb fingers extended.
+        if extendedCount == 4 {
             return .openHand
         }
 
-        // Fist: all four non-thumb fingers curled.
-        if curledFingers == 4 {
+        // Fist — all four non-thumb fingers curled.
+        if curledCount == 4 {
             return .fist
         }
 

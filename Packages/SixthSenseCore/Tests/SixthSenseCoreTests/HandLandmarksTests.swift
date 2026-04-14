@@ -29,11 +29,15 @@ import CoreGraphics
     }
 }
 
-@Test func handLandmarkIsConfidentAboveHalf() {
-    let low = HandLandmark(joint: .indexTip, position: .zero, confidence: 0.4)
+@Test func handLandmarkIsConfidentAtLooseThreshold() {
+    // Permissive threshold (0.3) — Vision frequently reports useful joints
+    // in the 0.3-0.5 range when the hand is partially turned or lit indirectly.
+    let veryLow = HandLandmark(joint: .indexTip, position: .zero, confidence: 0.1)
+    let borderline = HandLandmark(joint: .indexTip, position: .zero, confidence: 0.35)
     let high = HandLandmark(joint: .indexTip, position: .zero, confidence: 0.8)
 
-    #expect(low.isConfident == false)
+    #expect(veryLow.isConfident == false)
+    #expect(borderline.isConfident == true)
     #expect(high.isConfident == true)
 }
 

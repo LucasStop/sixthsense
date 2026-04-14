@@ -6,13 +6,18 @@ import SixthSenseCore
 /// SwiftUI canvas that draws the 21-landmark hand skeleton from a snapshot,
 /// showing each joint as a dot and each finger as a connecting line.
 ///
-/// Positions in the snapshot are normalized [0, 1] with origin at bottom-left
-/// (Vision's convention). This view converts to top-left pixels to match
-/// SwiftUI coordinate space, and mirrors horizontally so left and right match
-/// what the user sees in a mirror.
+/// Vision landmarks come from an image the module already fed through with
+/// `orientation: .upMirrored` — so the coordinates are already in the
+/// mirrored camera space. The CameraPreviewView also shows the camera feed
+/// mirrored, so we draw the skeleton **without** any additional horizontal
+/// flip: `normalized.x = 0.8` (user's real right hand) lands at the right
+/// side of the canvas, matching the camera feed.
 struct HandSkeletonCanvas: View {
     let snapshot: HandLandmarksSnapshot?
-    var mirror: Bool = true
+
+    /// Tint applied to the skeleton lines and non-wrist dots. Individual
+    /// finger color-coding is preserved underneath.
+    var tint: Color = .white
 
     var body: some View {
         Canvas { context, size in
@@ -28,7 +33,7 @@ struct HandSkeletonCanvas: View {
                 guard let landmark = snapshot.landmarks[joint],
                       landmark.isConfident else { continue }
                 let pixel = convert(landmark.position, in: size)
-                let radius: CGFloat = joint == .wrist ? 6 : 4
+                let radius: CGFloat = joint == .wrist ? 7 : 4
 
                 let rect = CGRect(
                     x: pixel.x - radius,
@@ -67,24 +72,25 @@ struct HandSkeletonCanvas: View {
         }
         context.stroke(
             path,
-            with: .color(.white.opacity(0.85)),
-            style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round)
+            with: .color(tint.opacity(0.9)),
+            style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round)
         )
     }
 
     /// Convert normalized Vision coords [0, 1] to SwiftUI pixel space.
-    /// Vision uses bottom-left origin; SwiftUI uses top-left.
+    /// Vision (with `.upMirrored`) hands us coordinates already matching
+    /// the mirrored camera feed, so we only flip Y (Vision origin is
+    /// bottom-left, SwiftUI is top-left).
     private func convert(_ normalized: CGPoint, in size: CGSize) -> CGPoint {
-        let x = mirror ? (1 - normalized.x) : normalized.x
-        let y = 1 - normalized.y  // flip vertically
-        return CGPoint(x: x * size.width, y: y * size.height)
+        CGPoint(x: normalized.x * size.width, y: (1 - normalized.y) * size.height)
     }
 
-    /// Color-code joints by finger for readability.
+    /// Color-code joints by finger for readability. Wrist uses the tint so
+    /// two overlaid skeletons (left + right) can be visually distinguished.
     private func color(for joint: HandJoint) -> Color {
         switch joint {
         case .wrist:
-            return .white
+            return tint
         case .thumbCMC, .thumbMP, .thumbIP, .thumbTip:
             return .orange
         case .indexMCP, .indexPIP, .indexDIP, .indexTip:
