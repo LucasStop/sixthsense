@@ -61,8 +61,11 @@ final class ModuleRegistry {
 
     /// Toggle a module on/off.
     func toggle(_ module: AnyModule) async {
+        print("[SixthSense] Toggle \(module.descriptor.name), current state: \(module.state)")
+
         if module.state == .running || module.state == .starting {
             await module.stop()
+            print("[SixthSense] \(module.descriptor.name) stopped")
         } else {
             // Check for conflicting modules
             await stopConflictingModules(for: module)
@@ -70,11 +73,13 @@ final class ModuleRegistry {
             // Check permissions
             let missing = services.permissions.checkMissing(module.requiredPermissions)
             if !missing.isEmpty {
-                return
+                print("[SixthSense] \(module.descriptor.name) missing permissions: \(missing.map { $0.type.label })")
+                // Still try to start — let the module handle permission prompts
             }
 
             do {
                 try await module.start()
+                print("[SixthSense] \(module.descriptor.name) started successfully, state: \(module.state)")
             } catch {
                 print("[SixthSense] Failed to start \(module.descriptor.name): \(error)")
             }
