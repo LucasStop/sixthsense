@@ -71,6 +71,14 @@ let package = Package(
             exclude: ["Resources/Info.plist"]
         ),
 
+        // Test mocks shared by module test targets. Regular target (not test)
+        // so multiple test targets can depend on it.
+        .target(
+            name: "SharedServicesMocks",
+            dependencies: ["SharedServices", "SixthSenseCore"],
+            path: "Packages/SharedServices/Mocks"
+        ),
+
         // Tests
         .testTarget(
             name: "SixthSenseCoreTests",
@@ -81,6 +89,36 @@ let package = Package(
             name: "SharedServicesTests",
             dependencies: ["SharedServices"],
             path: "Packages/SharedServices/Tests/SharedServicesTests"
+        ),
+        .testTarget(
+            name: "HandCommandModuleTests",
+            dependencies: ["HandCommandModule", "SixthSenseCore", "SharedServices", "SharedServicesMocks"],
+            path: "Packages/HandCommandModule/Tests/HandCommandModuleTests"
+        ),
+        .testTarget(
+            name: "GazeShiftModuleTests",
+            dependencies: ["GazeShiftModule", "SixthSenseCore", "SharedServices", "SharedServicesMocks"],
+            path: "Packages/GazeShiftModule/Tests/GazeShiftModuleTests"
+        ),
+        .testTarget(
+            name: "AirCursorModuleTests",
+            dependencies: ["AirCursorModule", "SixthSenseCore", "SharedServices", "SharedServicesMocks"],
+            path: "Packages/AirCursorModule/Tests/AirCursorModuleTests"
+        ),
+        .testTarget(
+            name: "PortalViewModuleTests",
+            dependencies: ["PortalViewModule", "SixthSenseCore", "SharedServices", "SharedServicesMocks"],
+            path: "Packages/PortalViewModule/Tests/PortalViewModuleTests"
+        ),
+        .testTarget(
+            name: "GhostDropModuleTests",
+            dependencies: ["GhostDropModule", "SixthSenseCore", "SharedServices", "SharedServicesMocks"],
+            path: "Packages/GhostDropModule/Tests/GhostDropModuleTests"
+        ),
+        .testTarget(
+            name: "NotchBarModuleTests",
+            dependencies: ["NotchBarModule", "SixthSenseCore"],
+            path: "Packages/NotchBarModule/Tests/NotchBarModuleTests"
         ),
     ]
 )
