@@ -160,11 +160,6 @@ public final class HandCommandModule: SixthSenseModule {
         cameraManager.unsubscribe(id: Self.descriptor.id)
         overlayManager.removeOverlay(id: Self.descriptor.id)
 
-        // Release any modifiers that might have been left held.
-        if router.isCommandHeld {
-            keyboardInput.releaseKey(keyCode: CGKeyCode(0x37), modifiers: [])
-        }
-
         latestSnapshot = nil
         latestLeftSnapshot = nil
         latestRightSnapshot = nil
@@ -313,35 +308,15 @@ public final class HandCommandModule: SixthSenseModule {
                 let point = Self.screenPoint(from: normalized, in: size, deadzone: deadzone)
                 cursorController.leftClick(at: point)
                 eventBus.emit(.handGestureDetected(.pinch(phase: .began, position: point)))
-            case .doubleClick(let normalized):
-                let point = Self.screenPoint(from: normalized, in: size, deadzone: deadzone)
-                cursorController.leftClick(at: point)
-                cursorController.leftClick(at: point)
-            case .dragBegin(let normalized):
-                let point = Self.screenPoint(from: normalized, in: size, deadzone: deadzone)
-                cursorController.leftMouseDown(at: point)
-            case .dragEnd(let normalized):
-                let point = Self.screenPoint(from: normalized, in: size, deadzone: deadzone)
-                cursorController.leftMouseUp(at: point)
-            case .scroll(let deltaY):
-                cursorController.scroll(deltaY: deltaY, deltaX: 0)
-            case .missionControl:
-                // Control + Up Arrow
-                keyboardInput.pressKey(keyCode: CGKeyCode(0x7E), modifiers: .maskControl)
-            case .showDesktop:
-                // F11 toggles show desktop
-                keyboardInput.pressKey(keyCode: CGKeyCode(0x67), modifiers: [])
-            case .switchSpaceLeft:
-                // Control + Left Arrow
-                keyboardInput.pressKey(keyCode: CGKeyCode(0x7B), modifiers: .maskControl)
-            case .switchSpaceRight:
-                // Control + Right Arrow
-                keyboardInput.pressKey(keyCode: CGKeyCode(0x7C), modifiers: .maskControl)
-            case .holdCommand:
-                // 0x37 is Command key
-                keyboardInput.holdKey(keyCode: CGKeyCode(0x37), modifiers: [])
-            case .releaseCommand:
-                keyboardInput.releaseKey(keyCode: CGKeyCode(0x37), modifiers: [])
+
+            // Currently disabled — the minimal MVP keeps the gesture set
+            // down to move + click. These cases are still recognised at the
+            // type level so old tests don't break, but produce no output.
+            case .doubleClick, .dragBegin, .dragEnd, .scroll,
+                 .missionControl, .showDesktop,
+                 .switchSpaceLeft, .switchSpaceRight,
+                 .holdCommand, .releaseCommand:
+                break
             }
         }
     }
