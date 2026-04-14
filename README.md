@@ -62,15 +62,24 @@ SixthSense/
 git clone https://github.com/LucasStop/SixthSense.git
 cd SixthSense
 
-# Compilar com SPM
-swift build
+# Build + install + run em um único comando (recomendado)
+./scripts/dev.sh
 
-# Executar
-swift run SixthSense
+# Ou só compilar sem rodar
+./scripts/build-app.sh --debug
 
 # Rodar os testes
 swift test
 ```
+
+O script `dev.sh` empacota o binário em `~/Applications/SixthSense.app`
+com assinatura ad-hoc e path fixo. Isso permite que a permissão de
+Acessibilidade concedida **persista entre rebuilds** — veja a seção
+de permissões abaixo.
+
+Evite usar `swift run SixthSense` diretamente: o binário fica em um
+path diferente do DerivedData a cada build e a macOS invalida a
+autorização de Acessibilidade toda vez.
 
 ## Permissões
 
@@ -79,6 +88,36 @@ O aplicativo requer as seguintes permissões do sistema:
 - **Acessibilidade** — Gerenciamento de janelas e controle do cursor
 - **Gravação de Tela** — Captura de tela para o PortalView
 - **Rede Local** — Comunicação entre dispositivos
+
+### Acessibilidade não persiste entre builds?
+
+Esse é um problema conhecido de binários SPM sem `.app` bundle. A
+macOS TCC database identifica apps autorizados por **bundle ID +
+assinatura de código + path**. Quando nenhum dos três é estável
+(caso do `swift run`), a permissão é invalidada a cada rebuild.
+
+A solução está no script `scripts/build-app.sh`, que monta um
+`SixthSense.app` com:
+
+- **Path fixo**: `~/Applications/SixthSense.app`
+- **Bundle ID estável**: `com.lucasstop.sixthsense`
+- **Assinatura ad-hoc**: `codesign --force --deep --sign -`
+
+Fluxo de setup (apenas uma vez):
+
+1. `./scripts/dev.sh` — compila e abre o app.
+2. Ajustes do Sistema → Privacidade e Segurança → Acessibilidade.
+3. Clique em "+" e adicione `~/Applications/SixthSense.app`.
+4. Reinicie o app (ou rode `./scripts/dev.sh` de novo).
+
+A partir daí, qualquer `./scripts/dev.sh` posterior preserva a
+autorização automaticamente — o bundle ID + assinatura ad-hoc +
+path continuam idênticos entre builds.
+
+Você pode conferir o status em tempo real no **Centro de Treinamento
+→ HandCommand**, que mostra um painel de diagnóstico com
+`AXIsProcessTrusted()` e um botão "Testar injeção" para validar o
+pipeline CGEvent.
 
 ## Licença
 
