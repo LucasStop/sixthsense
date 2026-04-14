@@ -59,29 +59,29 @@ final class ModuleRegistry {
         modules.first { $0.id == id }
     }
 
-    /// Toggle a module on/off.
+    /// Alterna um módulo entre ligado/desligado.
     func toggle(_ module: AnyModule) async {
-        print("[SixthSense] Toggle \(module.descriptor.name), current state: \(module.state)")
+        print("[SixthSense] Alternando \(module.descriptor.name), estado atual: \(module.state)")
 
         if module.state == .running || module.state == .starting {
             await module.stop()
-            print("[SixthSense] \(module.descriptor.name) stopped")
+            print("[SixthSense] \(module.descriptor.name) parado")
         } else {
-            // Check for conflicting modules
+            // Verifica módulos conflitantes
             await stopConflictingModules(for: module)
 
-            // Check permissions
+            // Verifica permissões
             let missing = services.permissions.checkMissing(module.requiredPermissions)
             if !missing.isEmpty {
-                print("[SixthSense] \(module.descriptor.name) missing permissions: \(missing.map { $0.type.label })")
-                // Still try to start — let the module handle permission prompts
+                print("[SixthSense] \(module.descriptor.name) com permissões faltando: \(missing.map { $0.type.label })")
+                // Ainda tenta iniciar — deixa o módulo lidar com prompts de permissão
             }
 
             do {
                 try await module.start()
-                print("[SixthSense] \(module.descriptor.name) started successfully, state: \(module.state)")
+                print("[SixthSense] \(module.descriptor.name) iniciado com sucesso, estado: \(module.state)")
             } catch {
-                print("[SixthSense] Failed to start \(module.descriptor.name): \(error)")
+                print("[SixthSense] Falha ao iniciar \(module.descriptor.name): \(error)")
             }
         }
     }
