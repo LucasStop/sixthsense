@@ -77,8 +77,10 @@ struct MenuBarView: View {
     private var footer: some View {
         HStack(spacing: 12) {
             Button(action: {
-                NSApplication.shared.activate(ignoringOtherApps: true)
                 openWindow(id: "tutorials")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    NSApplication.shared.activate(ignoringOtherApps: true)
+                }
             }) {
                 Label("Tutorials", systemImage: "book")
                     .font(.caption)
@@ -87,8 +89,10 @@ struct MenuBarView: View {
             .foregroundStyle(.secondary)
 
             Button(action: {
-                NSApplication.shared.activate(ignoringOtherApps: true)
                 openSettings()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    NSApplication.shared.activate(ignoringOtherApps: true)
+                }
             }) {
                 Label("Settings", systemImage: "gear")
                     .font(.caption)
