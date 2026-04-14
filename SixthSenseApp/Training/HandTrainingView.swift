@@ -313,14 +313,32 @@ struct HandTrainingView: View {
         let rightDetected = handModule.latestRightSnapshot != nil
         let leftGesture  = handModule.latestLeftSnapshot?.gesture ?? .none
 
+        // Describe what the left hand is doing right now.
+        let leftIcon: String
+        let leftDescription: String
+        let leftActive: Bool
+        if leftGesture == .fist {
+            leftIcon = "hand.raised.fill"
+            leftDescription = "Arrastando!"
+            leftActive = true
+        } else if leftGesture == .pinch {
+            leftIcon = "hand.pinch.fill"
+            leftDescription = "Clicando!"
+            leftActive = true
+        } else {
+            leftIcon = "hand.pinch"
+            leftDescription = "Pinça = clicar   •   Punho = arrastar"
+            leftActive = false
+        }
+
         return VStack(spacing: 12) {
             HStack(spacing: 12) {
                 handSimpleCard(
-                    title: "Mão Esquerda — Clicar",
-                    description: leftGesture == .pinch ? "Clicando!" : "Faça pinça para clicar",
-                    icon: "hand.pinch",
+                    title: "Mão Esquerda — Ações",
+                    description: leftDescription,
+                    icon: leftIcon,
                     tint: .pink,
-                    active: leftGesture == .pinch
+                    active: leftActive
                 )
                 handSimpleCard(
                     title: "Mão Direita — Mover",
@@ -346,11 +364,13 @@ struct HandTrainingView: View {
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.white.opacity(0.55))
 
-            HStack(spacing: 14) {
+            HStack(alignment: .top, spacing: 14) {
                 legendItem(icon: "hand.point.up.left", color: .cyan,
-                           label: "Mover cursor", description: "Mão direita aponta com o indicador")
+                           label: "Mover cursor", description: "Mão direita aponta")
                 legendItem(icon: "hand.pinch", color: .pink,
-                           label: "Clicar", description: "Mão esquerda junta polegar + indicador")
+                           label: "Clicar", description: "Mão esquerda faz pinça")
+                legendItem(icon: "hand.raised.fill", color: .orange,
+                           label: "Arrastar", description: "Mão esquerda fecha o punho")
             }
         }
     }

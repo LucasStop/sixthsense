@@ -239,6 +239,65 @@ private func reading(_ chirality: HandChirality, _ gesture: DetectedHandGesture,
     #expect(h.keyboard.calls.isEmpty)
 }
 
+// MARK: - Left hand drag pipeline
+
+@Test @MainActor func pipelineLeftFistCallsLeftMouseDown() async throws {
+    let h = Harness.make()
+    try await h.module.start()
+
+    h.module.handleReadings([reading(.left, .fist)])
+
+    let downCount = h.cursor.calls.filter { if case .leftMouseDown = $0 { return true }; return false }.count
+    #expect(downCount == 1)
+}
+
+@Test @MainActor func pipelineLeftFistReleaseCallsLeftMouseUp() async throws {
+    let h = Harness.make()
+    try await h.module.start()
+
+    h.module.handleReadings([reading(.left, .fist)])
+    h.module.handleReadings([reading(.left, .none)])
+
+    let upCount = h.cursor.calls.filter { if case .leftMouseUp = $0 { return true }; return false }.count
+    #expect(upCount == 1)
+}
+
+@Test @MainActor func pipelineMoveDuringDragUsesLeftMouseDragged() async throws {
+    let h = Harness.make()
+    try await h.module.start()
+
+    // First frame: right establishes cursor + left fist starts drag.
+    h.module.handleReadings([
+        reading(.right, .none, wrist: CGPoint(x: 0.5, y: 0.3)),
+        reading(.left, .fist),
+    ])
+
+    // Second frame: right moves while left still fist → should dispatch
+    // leftMouseDragged, not moveTo.
+    h.module.handleReadings([
+        reading(.right, .none, wrist: CGPoint(x: 0.6, y: 0.3)),
+        reading(.left, .fist),
+    ])
+
+    let draggedCount = h.cursor.calls.filter { if case .leftMouseDragged = $0 { return true }; return false }.count
+    #expect(draggedCount >= 1)
+}
+
+@Test @MainActor func pipelineLeftHandGoneEndsDragSafely() async throws {
+    let h = Harness.make()
+    try await h.module.start()
+
+    h.module.handleReadings([reading(.left, .fist)])
+    h.module.handleNoHands()
+
+    let downCount = h.cursor.calls.filter { if case .leftMouseDown = $0 { return true }; return false }.count
+    let upCount = h.cursor.calls.filter { if case .leftMouseUp = $0 { return true }; return false }.count
+    #expect(downCount == 1)
+    #expect(upCount == 1)
+}
+
+// MARK: - Right fist still does nothing
+
 @Test @MainActor func pipelineRightFistDoesNotDrag() async throws {
     let h = Harness.make()
     try await h.module.start()

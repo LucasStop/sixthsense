@@ -33,7 +33,7 @@ public enum HandAction: Sendable, Equatable {
 
 /// Pure state machine that maps hand readings to high-level actions.
 ///
-/// Current rules (minimal MVP — no drag, scroll, shortcuts, modifiers):
+/// Current rules:
 ///
 ///   • Right hand → always moves the cursor to the smoothed index-tip
 ///     position, regardless of what gesture is classified. The smoothing
@@ -41,13 +41,20 @@ public enum HandAction: Sendable, Equatable {
 ///     feels steady when the hand is still and responsive when it moves
 ///     fast.
 ///
-///   • Left hand  → clicks at the last known cursor position the moment it
-///     transitions into a `.pinch`. Sustained pinch does not spam clicks.
-///     A temporal debounce (`clickDebounce`) protects against double-fires
-///     when the classifier oscillates between `.pinch` and `.none`.
+///   • Left hand pinch  → clicks at the last known cursor position the
+///     moment it transitions into a `.pinch`. Sustained pinch does not
+///     spam clicks. A temporal debounce (`clickDebounce`) protects
+///     against double-fires when the classifier oscillates between
+///     `.pinch` and `.none`. Suppressed while a drag is active.
 ///
-/// Any other gesture is ignored. When either hand disappears, its tracking
-/// state resets so the next entry is a clean edge-trigger.
+///   • Left hand fist   → starts a drag: emits `.dragBegin` on the
+///     transition into `.fist` and `.dragEnd` when the fist is released.
+///     The module reads `isDragging` to know whether to dispatch
+///     `moveCursor` as `mouseMoved` or `leftMouseDragged`.
+///
+/// Any other gesture is ignored. When either hand disappears, its
+/// tracking state resets so the next entry is a clean edge-trigger, and
+/// any active drag is ended safely.
 public struct HandActionRouter: Sendable {
 
     // MARK: - Tunables
@@ -59,15 +66,20 @@ public struct HandActionRouter: Sendable {
     // MARK: - State
 
     /// The last smoothed index-tip position of the right hand (normalized
-    /// Vision coords). Used as the click target when the left hand pinches.
+    /// Vision coords). Used as the click target when the left hand pinches
+    /// and as the anchor for dragBegin / dragEnd.
     private var lastRightIndexTip: CGPoint = CGPoint(x: 0.5, y: 0.5)
 
-    /// Previous left-hand gesture — used to detect the edge transition into
-    /// `.pinch` (so holding the pinch doesn't fire repeat clicks).
+    /// Previous left-hand gesture — used to detect edge transitions.
     private var lastLeftGesture: DetectedHandGesture = .none
 
     /// Timestamp of the last click emitted, for temporal debounce.
     private var lastClickTime: Date?
+
+    /// Whether the user is currently holding the left fist (drag active).
+    /// Exposed so HandCommandModule can decide whether moveCursor should
+    /// be dispatched as a plain mouseMoved or as a leftMouseDragged.
+    public private(set) var isDragging: Bool = false
 
     /// One Euro Filter for the cursor x/y — smooths hand jitter while
     /// keeping intentional movement responsive.
@@ -111,10 +123,26 @@ public struct HandActionRouter: Sendable {
             smoother.reset()
         }
 
-        // Left hand → click on the edge transition into pinch, with a
-        // temporal debounce to reject classifier noise.
+        // Left hand → drag (fist) + click (pinch).
         if let left {
-            if left.gesture == .pinch && lastLeftGesture != .pinch {
+            // Drag state machine runs FIRST so we know if a pinch in this
+            // frame should be suppressed.
+            if left.gesture == .fist {
+                if !isDragging {
+                    actions.append(.dragBegin(at: lastRightIndexTip))
+                    isDragging = true
+                }
+                // Sustained fist → no additional event.
+            } else if isDragging {
+                actions.append(.dragEnd(at: lastRightIndexTip))
+                isDragging = false
+            }
+
+            // Click only when NOT dragging (so a pinch at the end of a
+            // drag gesture won't immediately click the drop target).
+            if !isDragging &&
+               left.gesture == .pinch &&
+               lastLeftGesture != .pinch {
                 let longEnoughSinceLastClick =
                     lastClickTime.map { now.timeIntervalSince($0) >= clickDebounce } ?? true
                 if longEnoughSinceLastClick {
@@ -122,8 +150,15 @@ public struct HandActionRouter: Sendable {
                     lastClickTime = now
                 }
             }
+
             lastLeftGesture = left.gesture
         } else {
+            // Left hand disappeared — fail-safe end of drag so the user
+            // isn't stuck with a held mouse button.
+            if isDragging {
+                actions.append(.dragEnd(at: lastRightIndexTip))
+                isDragging = false
+            }
             lastLeftGesture = .none
         }
 

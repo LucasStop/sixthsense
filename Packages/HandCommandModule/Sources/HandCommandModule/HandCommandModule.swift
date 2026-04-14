@@ -303,16 +303,30 @@ public final class HandCommandModule: SixthSenseModule {
             switch action {
             case .moveCursor(let normalized):
                 let point = Self.screenPoint(from: normalized, in: size, deadzone: deadzone)
-                cursorController.moveTo(point)
+                if router.isDragging {
+                    // During an active drag, emit a leftMouseDragged event
+                    // so apps receive the drag-in-progress notification.
+                    // A plain mouseMoved would leave them unaware.
+                    cursorController.leftMouseDragged(to: point)
+                } else {
+                    cursorController.moveTo(point)
+                }
             case .click(let normalized):
                 let point = Self.screenPoint(from: normalized, in: size, deadzone: deadzone)
                 cursorController.leftClick(at: point)
                 eventBus.emit(.handGestureDetected(.pinch(phase: .began, position: point)))
+            case .dragBegin(let normalized):
+                let point = Self.screenPoint(from: normalized, in: size, deadzone: deadzone)
+                cursorController.leftMouseDown(at: point)
+                eventBus.emit(.handGestureDetected(.grab(phase: .began, position: point)))
+            case .dragEnd(let normalized):
+                let point = Self.screenPoint(from: normalized, in: size, deadzone: deadzone)
+                cursorController.leftMouseUp(at: point)
+                eventBus.emit(.handGestureDetected(.grab(phase: .ended, position: point)))
 
-            // Currently disabled — the minimal MVP keeps the gesture set
-            // down to move + click. These cases are still recognised at the
-            // type level so old tests don't break, but produce no output.
-            case .doubleClick, .dragBegin, .dragEnd, .scroll,
+            // Still disabled — keep the gesture set lean. These cases are
+            // recognised at the type level but produce no output.
+            case .doubleClick, .scroll,
                  .missionControl, .showDesktop,
                  .switchSpaceLeft, .switchSpaceRight,
                  .holdCommand, .releaseCommand:
