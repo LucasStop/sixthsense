@@ -29,7 +29,7 @@ public final class NotchBarModule: SixthSenseModule {
         [
             PermissionRequirement(
                 type: .microphone,
-                reason: "Optional: enables audio visualisation inside the notch area",
+                reason: "Opcional: ativa a visualização de áudio dentro da área do notch",
                 isRequired: false
             ),
         ]
@@ -45,11 +45,11 @@ public final class NotchBarModule: SixthSenseModule {
     public var settingsView: some View {
         Form {
             Section("NotchBar") {
-                Toggle("Auto-hide when idle", isOn: Binding(
+                Toggle("Ocultar automaticamente quando inativo", isOn: Binding(
                     get: { self.autoHide },
                     set: { self.autoHide = $0 }
                 ))
-                Text("Transforms the MacBook notch into an interactive control center.")
+                Text("Transforma o notch do MacBook em um centro de controle interativo.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

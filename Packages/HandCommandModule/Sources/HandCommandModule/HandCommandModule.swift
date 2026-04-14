@@ -1,5 +1,5 @@
 import SwiftUI
-import Vision
+@preconcurrency import Vision
 import Combine
 import CoreMedia
 import SixthSenseCore
@@ -31,11 +31,11 @@ public final class HandCommandModule: SixthSenseModule {
         [
             PermissionRequirement(
                 type: .camera,
-                reason: "Hand tracking requires the front-facing camera"
+                reason: "O rastreamento de mãos requer a câmera frontal"
             ),
             PermissionRequirement(
                 type: .accessibility,
-                reason: "Required for cursor control and window management"
+                reason: "Necessário para controle do cursor e gerenciamento de janelas"
             ),
         ]
     }
@@ -145,9 +145,9 @@ public final class HandCommandModule: SixthSenseModule {
 
     public var settingsView: some View {
         Form {
-            Section("Hand Tracking") {
+            Section("Rastreamento de Mãos") {
                 HStack {
-                    Text("Sensitivity")
+                    Text("Sensibilidade")
                     Slider(value: Binding(get: { self.sensitivity },
                                           set: { self.sensitivity = $0 }),
                            in: 0.1...3.0, step: 0.1)
@@ -155,7 +155,7 @@ public final class HandCommandModule: SixthSenseModule {
                         .monospacedDigit()
                         .frame(width: 40)
                 }
-                Text("Adjust how much your hand movement translates to cursor motion.")
+                Text("Ajuste o quanto o movimento da mão se traduz em movimento do cursor.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

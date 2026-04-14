@@ -1,5 +1,5 @@
 import SwiftUI
-import Vision
+@preconcurrency import Vision
 import Combine
 import CoreMedia
 import SixthSenseCore
@@ -31,11 +31,11 @@ public final class GazeShiftModule: SixthSenseModule {
         [
             PermissionRequirement(
                 type: .camera,
-                reason: "Gaze tracking requires the front-facing camera"
+                reason: "O rastreamento do olhar requer a câmera frontal"
             ),
             PermissionRequirement(
                 type: .accessibility,
-                reason: "Required to focus and dim windows based on gaze"
+                reason: "Necessário para focar e escurecer janelas com base no olhar"
             ),
         ]
     }
@@ -135,9 +135,9 @@ public final class GazeShiftModule: SixthSenseModule {
 
     public var settingsView: some View {
         Form {
-            Section("Gaze Tracking") {
+            Section("Rastreamento do Olhar") {
                 HStack {
-                    Text("Dim Intensity")
+                    Text("Intensidade do Escurecimento")
                     Slider(value: Binding(get: { self.dimIntensity },
                                           set: { self.dimIntensity = $0 }),
                            in: 0.0...1.0, step: 0.05)
@@ -145,7 +145,7 @@ public final class GazeShiftModule: SixthSenseModule {
                         .monospacedDigit()
                         .frame(width: 44)
                 }
-                Text("How much unfocused windows are dimmed when gaze leaves them.")
+                Text("O quanto as janelas sem foco escurecem quando o olhar se afasta.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

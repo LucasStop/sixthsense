@@ -25,7 +25,7 @@ struct OnboardingView: View {
             SidebarRow(guide: guide)
         }
         .listStyle(.sidebar)
-        .navigationTitle("SixthSense")
+        .navigationTitle("Tutoriais")
     }
 
     // MARK: - Detail
@@ -49,10 +49,10 @@ struct OnboardingView: View {
                 .font(.system(size: 64))
                 .foregroundStyle(.blue)
 
-            Text("Welcome to SixthSense")
+            Text("Bem-vindo ao SixthSense")
                 .font(.largeTitle.bold())
 
-            Text("Choose a module from the sidebar to learn how to use it.")
+            Text("Escolha um módulo na barra lateral para aprender a usá-lo.")
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -60,7 +60,7 @@ struct OnboardingView: View {
             Divider()
                 .frame(width: 200)
 
-            Text("Quick Start")
+            Text("Início Rápido")
                 .font(.headline)
 
             quickStartGrid

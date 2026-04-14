@@ -29,11 +29,11 @@ public final class PortalViewModule: SixthSenseModule {
         [
             PermissionRequirement(
                 type: .screenRecording,
-                reason: "Required to capture the virtual display contents for streaming"
+                reason: "Necessário para capturar o conteúdo da tela virtual para streaming"
             ),
             PermissionRequirement(
                 type: .localNetwork,
-                reason: "Required to stream display contents to the paired device"
+                reason: "Necessário para transmitir o conteúdo da tela para o dispositivo pareado"
             ),
         ]
     }
@@ -99,21 +99,21 @@ public final class PortalViewModule: SixthSenseModule {
 
     public var settingsView: some View {
         Form {
-            Section("Virtual Display") {
-                LabeledContent("Resolution") {
+            Section("Tela Virtual") {
+                LabeledContent("Resolução") {
                     Text("\(Int(resolution.width)) x \(Int(resolution.height))")
                         .monospacedDigit()
                 }
-                LabeledContent("Target FPS") {
+                LabeledContent("FPS Alvo") {
                     Text("\(targetFPS)")
                         .monospacedDigit()
                 }
-                Text("Streams a virtual display to your connected device over the local network.")
+                Text("Transmite uma tela virtual para seu dispositivo conectado pela rede local.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
                 if bonjourService.discoveredPeers.isEmpty {
-                    Label("No companion devices found.", systemImage: "wifi.slash")
+                    Label("Nenhum dispositivo companheiro encontrado.", systemImage: "wifi.slash")
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(bonjourService.discoveredPeers) { peer in

@@ -29,7 +29,7 @@ public final class AirCursorModule: SixthSenseModule {
         [
             PermissionRequirement(
                 type: .localNetwork,
-                reason: "Required to discover and communicate with the paired iPhone"
+                reason: "Necessário para descobrir e se comunicar com o iPhone pareado"
             ),
         ]
     }
@@ -102,7 +102,7 @@ public final class AirCursorModule: SixthSenseModule {
         Form {
             Section("AirCursor") {
                 HStack {
-                    Text("Gyro Sensitivity")
+                    Text("Sensibilidade do Giroscópio")
                     Slider(value: Binding(get: { self.gyroSensitivity },
                                           set: { self.gyroSensitivity = $0 }),
                            in: 0.1...5.0, step: 0.1)
@@ -110,12 +110,12 @@ public final class AirCursorModule: SixthSenseModule {
                         .monospacedDigit()
                         .frame(width: 40)
                 }
-                Text("Controls how quickly the cursor moves relative to phone tilt.")
+                Text("Controla a velocidade do cursor em relação à inclinação do celular.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
                 if bonjourService.discoveredPeers.isEmpty {
-                    Label("No devices found on the local network.", systemImage: "wifi.slash")
+                    Label("Nenhum dispositivo encontrado na rede local.", systemImage: "wifi.slash")
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(bonjourService.discoveredPeers) { peer in

@@ -66,7 +66,7 @@ struct ModuleGuideView: View {
 
     private var overviewSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Overview", systemImage: "info.circle")
+            Label("Visão Geral", systemImage: "info.circle")
                 .font(.headline)
 
             Text(guide.overview)
@@ -80,7 +80,7 @@ struct ModuleGuideView: View {
 
     private var requirementsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("Requirements", systemImage: "checkmark.shield")
+            Label("Requisitos", systemImage: "checkmark.shield")
                 .font(.headline)
 
             ForEach(guide.requirements) { req in
@@ -106,7 +106,7 @@ struct ModuleGuideView: View {
 
     private var stepsSection: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Label("Step-by-Step Setup", systemImage: "list.number")
+            Label("Passo a Passo", systemImage: "list.number")
                 .font(.headline)
 
             ForEach(guide.steps) { step in
@@ -152,20 +152,20 @@ struct ModuleGuideView: View {
 
             // Progress
             HStack {
-                Text("Progress: Step \(currentStep + 1) of \(guide.steps.count)")
+                Text("Progresso: Passo \(currentStep + 1) de \(guide.steps.count)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
                 Spacer()
 
                 if currentStep < guide.steps.count - 1 {
-                    Button("Next Step") {
+                    Button("Próximo Passo") {
                         withAnimation { currentStep += 1 }
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
                 } else {
-                    Label("Ready!", systemImage: "checkmark.circle.fill")
+                    Label("Pronto!", systemImage: "checkmark.circle.fill")
                         .font(.callout.bold())
                         .foregroundStyle(.green)
                 }
@@ -177,7 +177,7 @@ struct ModuleGuideView: View {
 
     private var gesturesSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("Gestures & Controls", systemImage: "hand.tap")
+            Label("Gestos e Controles", systemImage: "hand.tap")
                 .font(.headline)
 
             LazyVGrid(columns: [
@@ -218,7 +218,7 @@ struct ModuleGuideView: View {
 
     private var tipsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("Pro Tips", systemImage: "lightbulb")
+            Label("Dicas Pro", systemImage: "lightbulb")
                 .font(.headline)
 
             ForEach(Array(guide.tips.enumerated()), id: \.offset) { _, tip in

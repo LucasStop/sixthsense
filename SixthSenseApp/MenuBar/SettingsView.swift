@@ -10,7 +10,7 @@ struct SettingsView: View {
     var body: some View {
         TabView {
             GeneralSettingsTab(appState: appState)
-                .tabItem { Label("General", systemImage: "gear") }
+                .tabItem { Label("Geral", systemImage: "gear") }
 
             ForEach(appState.registry.modules) { module in
                 module.settingsView
@@ -20,7 +20,7 @@ struct SettingsView: View {
             }
 
             PermissionsSettingsTab(permissions: appState.services.permissions)
-                .tabItem { Label("Permissions", systemImage: "lock.shield") }
+                .tabItem { Label("Permissões", systemImage: "lock.shield") }
         }
         .frame(width: 600, height: 400)
     }
@@ -34,11 +34,11 @@ struct GeneralSettingsTab: View {
 
     var body: some View {
         Form {
-            Section("Startup") {
-                Toggle("Launch at Login", isOn: $launchAtLogin)
+            Section("Inicialização") {
+                Toggle("Abrir ao Iniciar", isOn: $launchAtLogin)
             }
 
-            Section("Modules") {
+            Section("Módulos") {
                 ForEach(appState.registry.modules) { module in
                     HStack {
                         Image(systemName: module.descriptor.systemImage)
@@ -66,16 +66,16 @@ struct PermissionsSettingsTab: View {
 
     var body: some View {
         Form {
-            Section("System Permissions") {
-                PermissionRow(name: "Camera", icon: "camera",
+            Section("Permissões do Sistema") {
+                PermissionRow(name: "Câmera", icon: "camera",
                              granted: permissions.cameraGranted,
                              action: { Task { await permissions.requestCamera() } })
 
-                PermissionRow(name: "Accessibility", icon: "accessibility",
+                PermissionRow(name: "Acessibilidade", icon: "accessibility",
                              granted: permissions.accessibilityGranted,
                              action: { permissions.openAccessibilitySettings() })
 
-                PermissionRow(name: "Screen Recording", icon: "rectangle.dashed.badge.record",
+                PermissionRow(name: "Gravação de Tela", icon: "rectangle.dashed.badge.record",
                              granted: permissions.screenRecordingGranted,
                              action: { permissions.openScreenRecordingSettings() })
             }
@@ -101,7 +101,7 @@ struct PermissionRow: View {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(.green)
             } else {
-                Button("Grant") { action() }
+                Button("Conceder") { action() }
                     .controlSize(.small)
             }
         }

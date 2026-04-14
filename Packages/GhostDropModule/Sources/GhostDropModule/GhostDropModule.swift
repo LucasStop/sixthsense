@@ -1,5 +1,5 @@
 import SwiftUI
-import Vision
+@preconcurrency import Vision
 import Combine
 import CoreMedia
 import SixthSenseCore
@@ -32,11 +32,11 @@ public final class GhostDropModule: SixthSenseModule {
         [
             PermissionRequirement(
                 type: .camera,
-                reason: "Used for hand gesture detection when HandCommand is not active"
+                reason: "Usado para detecção de gestos quando o HandCommand não está ativo"
             ),
             PermissionRequirement(
                 type: .localNetwork,
-                reason: "Required to send clipboard data to nearby devices"
+                reason: "Necessário para enviar dados da área de transferência para dispositivos próximos"
             ),
         ]
     }
@@ -193,12 +193,12 @@ public final class GhostDropModule: SixthSenseModule {
     public var settingsView: some View {
         Form {
             Section("GhostDrop") {
-                Text("Perform a throw gesture to send your clipboard to a nearby device.")
+                Text("Faça um gesto de arremesso para enviar sua área de transferência para um dispositivo próximo.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
                 if bonjourService.discoveredPeers.isEmpty {
-                    Label("No devices found on the local network.", systemImage: "wifi.slash")
+                    Label("Nenhum dispositivo encontrado na rede local.", systemImage: "wifi.slash")
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(bonjourService.discoveredPeers) { peer in

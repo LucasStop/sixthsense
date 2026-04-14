@@ -35,9 +35,9 @@ public enum ModuleCategory: String, Sendable, CaseIterable {
 
     public var label: String {
         switch self {
-        case .input: return "Input Control"
-        case .display: return "Display"
-        case .transfer: return "Transfer"
+        case .input: return "Controle de Entrada"
+        case .display: return "Tela"
+        case .transfer: return "Transferência"
         case .interface: return "Interface"
         }
     }

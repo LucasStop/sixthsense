@@ -19,12 +19,12 @@ public enum ModuleState: String, Sendable {
     /// User-facing label
     public var label: String {
         switch self {
-        case .disabled: return "Off"
-        case .waitingForPermissions: return "Needs Permissions"
-        case .starting: return "Starting..."
-        case .running: return "Active"
-        case .error: return "Error"
-        case .stopping: return "Stopping..."
+        case .disabled: return "Desligado"
+        case .waitingForPermissions: return "Permissões Necessárias"
+        case .starting: return "Iniciando..."
+        case .running: return "Ativo"
+        case .error: return "Erro"
+        case .stopping: return "Parando..."
         }
     }
 

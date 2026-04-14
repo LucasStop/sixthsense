@@ -50,7 +50,7 @@ struct MenuBarView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("SixthSense")
                     .font(.headline)
-                Text("Futuristic Mac Control")
+                Text("Controle Futurista do Mac")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -59,7 +59,7 @@ struct MenuBarView: View {
 
             let activeCount = appState.registry.modules.filter { $0.state.isActive }.count
             if activeCount > 0 {
-                Text("\(activeCount) active")
+                Text("\(activeCount) ativo(s)")
                     .font(.caption)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
@@ -82,7 +82,7 @@ struct MenuBarView: View {
                     NSApplication.shared.activate(ignoringOtherApps: true)
                 }
             }) {
-                Label("Tutorials", systemImage: "book")
+                Label("Tutoriais", systemImage: "book")
                     .font(.caption)
             }
             .buttonStyle(.plain)
@@ -94,7 +94,7 @@ struct MenuBarView: View {
                     NSApplication.shared.activate(ignoringOtherApps: true)
                 }
             }) {
-                Label("Settings", systemImage: "gear")
+                Label("Configurações", systemImage: "gear")
                     .font(.caption)
             }
             .buttonStyle(.plain)
@@ -105,7 +105,7 @@ struct MenuBarView: View {
             Button(action: {
                 NSApplication.shared.terminate(nil)
             }) {
-                Label("Quit", systemImage: "power")
+                Label("Sair", systemImage: "power")
                     .font(.caption)
             }
             .buttonStyle(.plain)

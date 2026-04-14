@@ -12,21 +12,21 @@ public enum PermissionType: String, Sendable, CaseIterable {
 
     public var label: String {
         switch self {
-        case .camera: return "Camera"
-        case .accessibility: return "Accessibility"
-        case .screenRecording: return "Screen Recording"
-        case .localNetwork: return "Local Network"
-        case .microphone: return "Microphone"
+        case .camera: return "Câmera"
+        case .accessibility: return "Acessibilidade"
+        case .screenRecording: return "Gravação de Tela"
+        case .localNetwork: return "Rede Local"
+        case .microphone: return "Microfone"
         }
     }
 
     public var description: String {
         switch self {
-        case .camera: return "Required for hand gesture and gaze tracking via webcam"
-        case .accessibility: return "Required for window management and cursor control"
-        case .screenRecording: return "Required for capturing screen content"
-        case .localNetwork: return "Required for cross-device communication"
-        case .microphone: return "Required for audio visualization in NotchBar"
+        case .camera: return "Necessário para rastreamento de gestos e olhar via webcam"
+        case .accessibility: return "Necessário para gerenciamento de janelas e controle do cursor"
+        case .screenRecording: return "Necessário para captura de conteúdo da tela"
+        case .localNetwork: return "Necessário para comunicação entre dispositivos"
+        case .microphone: return "Necessário para visualização de áudio no NotchBar"
         }
     }
 
