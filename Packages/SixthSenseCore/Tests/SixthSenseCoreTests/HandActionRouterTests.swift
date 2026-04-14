@@ -275,8 +275,8 @@ private func reading(
         if case .dragBegin(let p) = action { return p }
         return nil
     }.first
-    #expect(dragPoint?.x == 0.6)
-    #expect(dragPoint?.y == 0.4)
+    #expect(abs((dragPoint?.x ?? 0) - 0.6) < 0.001)
+    #expect(abs((dragPoint?.y ?? 0) - 0.4) < 0.001)
 }
 
 @Test func dragEndEmittedExactlyOnceWhenReleased() {

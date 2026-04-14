@@ -126,6 +126,14 @@ struct MenuBarView: View {
 
             Divider()
 
+            Button {
+                NotificationCenter.default.post(name: .sixthSenseOpenSetup, object: nil)
+            } label: {
+                Label("Configuração Inicial", systemImage: "checklist")
+            }
+
+            Divider()
+
             Button(role: .destructive) {
                 NSApplication.shared.terminate(nil)
             } label: {
