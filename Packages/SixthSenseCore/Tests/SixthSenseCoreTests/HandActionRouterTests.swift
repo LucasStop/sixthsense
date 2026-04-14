@@ -39,23 +39,26 @@ private func reading(
 @Test func rightHandAlwaysEmitsMoveCursorRegardlessOfGesture() {
     var router = HandActionRouter()
 
-    // Pointing — moves cursor to index tip.
+    // Helper: check whether the frame produced ANY moveCursor action.
+    func hasMove(_ actions: [HandAction]) -> Bool {
+        actions.contains { if case .moveCursor = $0 { return true }; return false }
+    }
+
+    // Pointing — first sample is bootstrap, smoother returns value as-is.
     let pointing = reading(
         chirality: .right,
         gesture: .pointing,
         landmarks: landmarks(index: CGPoint(x: 0.3, y: 0.4))
     )
-    let a1 = router.process(left: nil, right: pointing)
-    #expect(a1.contains { if case .moveCursor(let p) = $0 { return p.x == 0.3 && p.y == 0.4 }; return false })
+    #expect(hasMove(router.process(left: nil, right: pointing)))
 
-    // .none — still moves cursor because gesture is irrelevant to movement.
+    // .none — still moves cursor because gesture is irrelevant.
     let free = reading(
         chirality: .right,
         gesture: .none,
         landmarks: landmarks(index: CGPoint(x: 0.7, y: 0.2))
     )
-    let a2 = router.process(left: nil, right: free)
-    #expect(a2.contains { if case .moveCursor(let p) = $0 { return p.x == 0.7 && p.y == 0.2 }; return false })
+    #expect(hasMove(router.process(left: nil, right: free)))
 
     // .openHand — same.
     let open = reading(
@@ -63,8 +66,26 @@ private func reading(
         gesture: .openHand,
         landmarks: landmarks(index: CGPoint(x: 0.5, y: 0.5))
     )
-    let a3 = router.process(left: nil, right: open)
-    #expect(a3.contains { if case .moveCursor(let p) = $0 { return p.x == 0.5 && p.y == 0.5 }; return false })
+    #expect(hasMove(router.process(left: nil, right: open)))
+}
+
+@Test func rightHandFirstSampleIsBootstrappedNotSmoothed() {
+    // First reading for a freshly-reset smoother passes through unchanged,
+    // so the test helper that expects exact coordinates still works for
+    // single-frame tests in the pipeline suite.
+    var router = HandActionRouter()
+    let r = reading(
+        chirality: .right,
+        gesture: .pointing,
+        landmarks: landmarks(index: CGPoint(x: 0.123, y: 0.456))
+    )
+    let actions = router.process(left: nil, right: r)
+    let movedTo: CGPoint? = actions.compactMap { action in
+        if case .moveCursor(let p) = action { return p }
+        return nil
+    }.first
+    #expect(movedTo?.x == 0.123)
+    #expect(movedTo?.y == 0.456)
 }
 
 @Test func rightHandDoesNotEmitClickOnPinch() {
@@ -124,14 +145,33 @@ private func reading(
     #expect(second.filter { if case .click = $0 { return true }; return false }.count == 0)
 }
 
+@Test func leftPinchDebounceBlocksRapidDoubleFire() {
+    // Simulates the classifier flapping between pinch → none → pinch
+    // inside a few milliseconds (typical detector noise). The debounce
+    // window (~0.18s) must swallow the second click so the user only
+    // gets one click event from one physical pinch.
+    var router = HandActionRouter()
+    let pinch = reading(chirality: .left, gesture: .pinch)
+    let none = reading(chirality: .left, gesture: .none)
+
+    let t0 = Date()
+    _ = router.process(left: pinch, right: nil, now: t0)
+    _ = router.process(left: none, right: nil, now: t0.addingTimeInterval(0.03))
+    let second = router.process(left: pinch, right: nil, now: t0.addingTimeInterval(0.08))
+
+    #expect(second.filter { if case .click = $0 { return true }; return false }.count == 0)
+}
+
 @Test func leftPinchAfterReleaseFiresAgain() {
     var router = HandActionRouter()
     let pinch = reading(chirality: .left, gesture: .pinch)
     let none = reading(chirality: .left, gesture: .none)
 
-    _ = router.process(left: pinch, right: nil)
-    _ = router.process(left: none, right: nil)
-    let second = router.process(left: pinch, right: nil)
+    // Need explicit timestamps so the second click clears the debounce.
+    let t0 = Date()
+    _ = router.process(left: pinch, right: nil, now: t0)
+    _ = router.process(left: none, right: nil, now: t0.addingTimeInterval(0.05))
+    let second = router.process(left: pinch, right: nil, now: t0.addingTimeInterval(0.5))
 
     #expect(second.filter { if case .click = $0 { return true }; return false }.count == 1)
 }
@@ -160,13 +200,14 @@ private func reading(
 
     // Left hand pinches → click.
     let pinch = reading(chirality: .left, gesture: .pinch)
-    _ = router.process(left: pinch, right: nil)
+    let t0 = Date()
+    _ = router.process(left: pinch, right: nil, now: t0)
 
     // Hand disappears.
-    _ = router.process(left: nil, right: nil)
+    _ = router.process(left: nil, right: nil, now: t0.addingTimeInterval(0.1))
 
-    // New pinch frame should fire a fresh click (edge-triggered again).
-    let second = router.process(left: pinch, right: nil)
+    // New pinch after the debounce window should fire a fresh click.
+    let second = router.process(left: pinch, right: nil, now: t0.addingTimeInterval(0.5))
     #expect(second.filter { if case .click = $0 { return true }; return false }.count == 1)
 }
 

@@ -174,6 +174,10 @@ private func reading(_ chirality: HandChirality, _ gesture: DetectedHandGesture,
 
     h.module.handleReadings([reading(.left, .pinch)])
     h.module.handleReadings([reading(.left, .none)])
+
+    // Wait past the click debounce window (~0.18s) before the second pinch.
+    try await Task.sleep(for: .milliseconds(220))
+
     h.module.handleReadings([reading(.left, .pinch)])
 
     let clickCount = h.cursor.calls.filter { if case .leftClick = $0 { return true }; return false }.count
