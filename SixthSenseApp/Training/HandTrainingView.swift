@@ -80,7 +80,52 @@ struct HandTrainingView: View {
 
     // MARK: - Diagnostics Card
 
+    @ViewBuilder
     private var diagnosticsCard: some View {
+        if diagnosticsState == .granted {
+            compactDiagnosticsBar
+        } else {
+            expandedDiagnosticsPanel
+        }
+    }
+
+    /// Barra compacta mostrada quando tudo está OK — não rouba espaço
+    /// visual, mas ainda dá feedback imediato se algo mudar.
+    private var compactDiagnosticsBar: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "checkmark.shield.fill")
+                .font(.callout)
+                .foregroundStyle(.green)
+            Text("Acessibilidade OK — CGEvent pode controlar o cursor")
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.7))
+            Spacer()
+            Button {
+                lastProbeResult = AccessibilityDiagnostics.performInjectionProbe()
+            } label: {
+                Label("Testar", systemImage: "play.circle")
+                    .font(.caption2)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.white.opacity(0.7))
+
+            if let probe = lastProbeResult {
+                Image(systemName: probe.isSuccess ? "checkmark.circle.fill" : "xmark.octagon.fill")
+                    .font(.caption)
+                    .foregroundStyle(probe.isSuccess ? .green : .red)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.green.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(.green.opacity(0.3), lineWidth: 1)
+        )
+    }
+
+    /// Painel expandido quando há pendência de permissão.
+    private var expandedDiagnosticsPanel: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
                 Image(systemName: diagnosticsIcon)

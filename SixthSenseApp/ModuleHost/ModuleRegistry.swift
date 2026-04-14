@@ -2,126 +2,60 @@ import Foundation
 import SixthSenseCore
 import SharedServices
 import HandCommandModule
-import GazeShiftModule
-import AirCursorModule
-import PortalViewModule
-import GhostDropModule
-import NotchBarModule
 
 // MARK: - Module Registry
 
-/// Central registry that holds all module instances and manages their lifecycle.
-/// Modules are registered at compile time (no runtime discovery).
-/// Uses AnyModule type-erasure to store heterogeneous module types.
+/// Holds the HandCommand module instance and drives its lifecycle. The
+/// registry is deliberately tiny — there's only one feature module — but
+/// it keeps start/stop/permission logic in a single place so the UI doesn't
+/// have to know anything about camera setup or state transitions.
 @MainActor
 @Observable
 final class ModuleRegistry {
-    private(set) var modules: [AnyModule] = []
-    private let services: SharedServiceContainer
-
-    /// Concrete references to each module, kept so the Training center can
-    /// observe their live state properties. The same instances are also
-    /// wrapped in AnyModules inside `modules`.
+    /// Concrete reference used by the training view to observe live state.
     let handCommand: HandCommandModule
-    let gazeShift: GazeShiftModule
-    let airCursor: AirCursorModule
-    let portalView: PortalViewModule
-    let ghostDrop: GhostDropModule
-    let notchBar: NotchBarModule
+
+    private let services: SharedServiceContainer
 
     init(services: SharedServiceContainer) {
         self.services = services
-
-        // Create the concrete modules up front so we can retain typed
-        // references for the Training views while still registering them.
-        let handCommand = HandCommandModule(
+        self.handCommand = HandCommandModule(
             cameraManager: services.camera,
             overlayManager: services.overlay,
             accessibilityService: services.accessibility,
             cursorController: services.input,
             eventBus: services.eventBus
         )
-        let gazeShift = GazeShiftModule(
-            cameraManager: services.camera,
-            overlayManager: services.overlay,
-            accessibilityService: services.accessibility
-        )
-        let airCursor = AirCursorModule(
-            bonjourService: services.network,
-            cursorController: services.input
-        )
-        let portalView = PortalViewModule(
-            bonjourService: services.network
-        )
-        let ghostDrop = GhostDropModule(
-            cameraManager: services.camera,
-            bonjourService: services.network,
-            eventBus: services.eventBus
-        )
-        let notchBar = NotchBarModule(
-            overlay: services.overlay
-        )
-
-        self.handCommand = handCommand
-        self.gazeShift = gazeShift
-        self.airCursor = airCursor
-        self.portalView = portalView
-        self.ghostDrop = ghostDrop
-        self.notchBar = notchBar
-
-        modules = [
-            AnyModule(handCommand),
-            AnyModule(gazeShift),
-            AnyModule(airCursor),
-            AnyModule(portalView),
-            AnyModule(ghostDrop),
-            AnyModule(notchBar),
-        ]
     }
 
-    /// Find a module by its descriptor ID.
-    func module(for id: String) -> AnyModule? {
-        modules.first { $0.id == id }
+    /// Convenient accessor used by the menu bar toggle.
+    var isActive: Bool {
+        handCommand.state.isActive
     }
 
-    /// Alterna um módulo entre ligado/desligado.
-    func toggle(_ module: AnyModule) async {
-        print("[SixthSense] Alternando \(module.descriptor.name), estado atual: \(module.state)")
+    /// Toggle HandCommand on/off. Logs to the console and handles errors
+    /// gracefully so the UI can trust the state transition.
+    func toggleHandCommand() async {
+        print("[SixthSense] Alternando HandCommand, estado atual: \(handCommand.state)")
 
-        if module.state == .running || module.state == .starting {
-            await module.stop()
-            print("[SixthSense] \(module.descriptor.name) parado")
-        } else {
-            // Verifica módulos conflitantes
-            await stopConflictingModules(for: module)
-
-            // Verifica permissões
-            let missing = services.permissions.checkMissing(module.requiredPermissions)
-            if !missing.isEmpty {
-                print("[SixthSense] \(module.descriptor.name) com permissões faltando: \(missing.map { $0.type.label })")
-                // Ainda tenta iniciar — deixa o módulo lidar com prompts de permissão
-            }
-
-            do {
-                try await module.start()
-                print("[SixthSense] \(module.descriptor.name) iniciado com sucesso, estado: \(module.state)")
-            } catch {
-                print("[SixthSense] Falha ao iniciar \(module.descriptor.name): \(error)")
-            }
+        if handCommand.state == .running || handCommand.state == .starting {
+            await handCommand.stop()
+            print("[SixthSense] HandCommand parado")
+            return
         }
-    }
 
-    // MARK: - Conflict Resolution
+        // Verifica permissões — tenta iniciar mesmo se estiverem faltando
+        // para que o módulo dispare o prompt nativo na hora certa.
+        let missing = services.permissions.checkMissing(handCommand.requiredPermissions)
+        if !missing.isEmpty {
+            print("[SixthSense] HandCommand com permissões faltando: \(missing.map { $0.type.label })")
+        }
 
-    private let cursorControlModules: Set<String> = ["hand-command", "air-cursor"]
-
-    private func stopConflictingModules(for module: AnyModule) async {
-        if cursorControlModules.contains(module.id) {
-            for otherModule in modules where otherModule.id != module.id
-                && cursorControlModules.contains(otherModule.id)
-                && otherModule.state.isActive {
-                await otherModule.stop()
-            }
+        do {
+            try await handCommand.start()
+            print("[SixthSense] HandCommand iniciado com sucesso, estado: \(handCommand.state)")
+        } catch {
+            print("[SixthSense] Falha ao iniciar HandCommand: \(error)")
         }
     }
 }

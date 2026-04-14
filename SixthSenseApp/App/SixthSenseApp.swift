@@ -9,7 +9,6 @@ struct SixthSenseApp: App {
         // Menu bar icon with popover
         MenuBarExtra {
             MenuBarView(appState: appState)
-                .frame(width: 320, height: 480)
         } label: {
             Image(systemName: "hand.raised.fingers.spread")
         }
@@ -21,15 +20,18 @@ struct SixthSenseApp: App {
         }
 
         // Tutorial window
-        Window("SixthSense Tutorials", id: "tutorials") {
+        Window("Tutorial — SixthSense", id: "tutorials") {
             OnboardingView()
         }
-        .defaultSize(width: 800, height: 600)
+        .defaultSize(width: 780, height: 640)
 
-        // Training center — sidebar with live trainings for every feature
-        Window("Centro de Treinamento", id: "training-center") {
-            TrainingCenterView(appState: appState)
+        // Hand tracking training / debug window
+        Window("Modo Treinamento", id: "hand-training") {
+            HandTrainingView(
+                handModule: appState.registry.handCommand,
+                cameraSession: { appState.services.camera.avSession }
+            )
         }
-        .defaultSize(width: 820, height: 660)
+        .defaultSize(width: 620, height: 760)
     }
 }
