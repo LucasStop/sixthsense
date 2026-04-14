@@ -35,3 +35,6 @@ Package.resolved
 *.env
 *.key
 *.pem
+
+# Claude Code local config
+.claude/
