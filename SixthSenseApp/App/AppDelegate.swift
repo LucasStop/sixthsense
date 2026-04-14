@@ -14,17 +14,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // Check accessibility permissions on launch
+        // Verifica permissões de acessibilidade ao iniciar
         if !AXIsProcessTrusted() {
-            print("[SixthSense] Accessibility not yet granted. Will prompt when needed.")
+            print("[SixthSense] Acessibilidade ainda não concedida. Solicitaremos quando necessário.")
         } else {
-            print("[SixthSense] Accessibility granted.")
+            print("[SixthSense] Acessibilidade concedida.")
         }
 
-        print("[SixthSense] App launched successfully.")
+        print("[SixthSense] Aplicativo iniciado com sucesso.")
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        print("[SixthSense] Shutting down...")
+        print("[SixthSense] Encerrando...")
     }
 }

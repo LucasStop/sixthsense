@@ -1,82 +1,85 @@
 # SixthSense
 
-> Futuristic macOS control: hand gestures, gaze tracking, iPhone-as-remote, portal displays, cross-reality clipboard, and an interactive notch bar.
+> Controle futurista do macOS: gestos de mão, rastreamento do olhar, iPhone como controle remoto, exibições de portal, área de transferência entre realidades e uma barra de notch interativa.
 
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-blue)
 ![Swift 5.9](https://img.shields.io/badge/Swift-5.9-orange)
 ![License MIT](https://img.shields.io/badge/License-MIT-green)
 
-## Modules
+## Módulos
 
-| Module | Description | Status |
-|--------|-------------|--------|
-| **HandCommand** | Control windows with hand gestures via webcam (pinch, swipe, spread) | WIP |
-| **GazeShift** | Gaze-aware desktop: windows react to where you look | WIP |
-| **AirCursor** | Use your iPhone as a Wii Remote to control the Mac cursor | WIP |
-| **PortalView** | Turn any device into a portal to your Mac via QR code + WebRTC | WIP |
-| **GhostDrop** | Grab content with a hand gesture, throw it to another device | WIP |
-| **NotchBar** | Transform the MacBook notch into an interactive control center | WIP |
+| Módulo | Descrição | Status |
+|--------|-----------|--------|
+| **HandCommand** | Controle janelas com gestos de mão via webcam (pinça, deslizar, abrir) | Em desenvolvimento |
+| **GazeShift** | Desktop com rastreamento do olhar: janelas reagem para onde você olha | Em desenvolvimento |
+| **AirCursor** | Use seu iPhone como um Wii Remote para controlar o cursor do Mac | Em desenvolvimento |
+| **PortalView** | Transforme qualquer dispositivo em um portal para seu Mac via QR code + WebRTC | Em desenvolvimento |
+| **GhostDrop** | Agarre conteúdo com um gesto de mão e jogue para outro dispositivo | Em desenvolvimento |
+| **NotchBar** | Transforme o notch do MacBook em um centro de controle interativo | Em desenvolvimento |
 
-## Architecture
+## Arquitetura
 
-Single menu bar app with modular architecture. Each feature is an independent Swift Package that can be enabled/disabled at runtime.
+Aplicativo único de menu bar com arquitetura modular. Cada feature é um Swift Package independente que pode ser ativado/desativado em tempo de execução.
 
 ```
 SixthSense/
 ├── Packages/
-│   ├── SixthSenseCore/       # Core protocols (ModuleProtocol, EventBus)
-│   ├── SharedServices/        # Camera, Network, Overlay, Accessibility, Input
-│   ├── HandCommandModule/     # Hand gesture control
-���   ├── GazeShiftModule/       # Eye tracking
-│   ├── AirCursorModule/       # iPhone gyro cursor
-│   ├── PortalViewModule/      # WebRTC display streaming
-│   ├── GhostDropModule/       # Cross-device clipboard
-│   └── NotchBarModule/        # Notch UI
-├── SixthSenseApp/             # Main app shell
-└── SixthSenseCompanion/       # iOS companion app
+│   ├── SixthSenseCore/       # Protocolos do domínio (ModuleProtocol, EventBus)
+│   ├── SharedServices/        # Câmera, Rede, Overlay, Acessibilidade, Input
+│   ├── HandCommandModule/     # Controle por gestos de mão
+│   ├── GazeShiftModule/       # Rastreamento do olhar
+│   ├── AirCursorModule/       # Cursor via giroscópio do iPhone
+│   ├── PortalViewModule/      # Streaming de display via WebRTC
+│   ├── GhostDropModule/       # Área de transferência entre dispositivos
+│   └── NotchBarModule/        # UI do notch
+├── SixthSenseApp/             # Shell principal do aplicativo
+└── SixthSenseCompanion/       # App companion para iOS
 ```
 
-## Tech Stack
+## Stack Tecnológico
 
-- **Swift + SwiftUI** (native macOS)
-- **Vision Framework** (hand pose + face landmarks)
-- **CGEvent** (synthetic input injection)
-- **Accessibility API** (window management)
-- **Network.framework** (Bonjour device discovery)
-- **ScreenCaptureKit** (screen capture)
-- **WebRTC** (display streaming)
-- **ARKit** (iOS companion AR features)
+- **Swift + SwiftUI** (macOS nativo)
+- **Vision Framework** (pose de mão + landmarks faciais)
+- **CGEvent** (injeção de eventos sintéticos)
+- **Accessibility API** (gerenciamento de janelas)
+- **Network.framework** (descoberta de dispositivos via Bonjour)
+- **ScreenCaptureKit** (captura de tela)
+- **WebRTC** (streaming de display)
+- **ARKit** (features AR do companion iOS)
 
-## Requirements
+## Requisitos
 
-- macOS 14 (Sonoma) or later
+- macOS 14 (Sonoma) ou superior
 - Xcode 15+
 - Swift 5.9+
-- MacBook with camera (for HandCommand and GazeShift)
-- iPhone (for AirCursor companion)
+- MacBook com câmera (para HandCommand e GazeShift)
+- iPhone (para o companion AirCursor)
 
-## Build
+## Compilação
 
 ```bash
-# Clone
+# Clonar
 git clone https://github.com/LucasStop/SixthSense.git
 cd SixthSense
 
-# Build with SPM
+# Compilar com SPM
 swift build
 
-# Run
+# Executar
 swift run SixthSense
+
+# Rodar os testes
+swift test
 ```
 
-## Permissions
+## Permissões
 
-The app requires the following system permissions:
-- **Camera** - Hand gesture and gaze tracking
-- **Accessibility** - Window management and cursor control
-- **Screen Recording** - Screen capture for PortalView
-- **Local Network** - Cross-device communication
+O aplicativo requer as seguintes permissões do sistema:
+- **Câmera** — Rastreamento de gestos e do olhar
+- **Acessibilidade** — Gerenciamento de janelas e controle do cursor
+- **Gravação de Tela** — Captura de tela para o PortalView
+- **Rede Local** — Comunicação entre dispositivos
 
-## License
+## Licença
 
-MIT License. See [LICENSE](LICENSE) for details.
+Licença MIT. Veja [LICENSE](LICENSE) para detalhes.

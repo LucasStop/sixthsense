@@ -98,10 +98,10 @@ public enum CameraError: LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .deviceNotAvailable: return "Camera device not available"
-        case .cannotAddInput: return "Cannot add camera input to session"
-        case .cannotAddOutput: return "Cannot add video output to session"
-        case .permissionDenied: return "Camera permission denied"
+        case .deviceNotAvailable: return "Dispositivo de câmera não disponível"
+        case .cannotAddInput: return "Não foi possível adicionar entrada de câmera à sessão"
+        case .cannotAddOutput: return "Não foi possível adicionar saída de vídeo à sessão"
+        case .permissionDenied: return "Permissão de câmera negada"
         }
     }
 }
