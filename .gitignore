@@ -1,0 +1,37 @@
+# Xcode
+*.xcodeproj/project.xcworkspace/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+xcuserdata/
+*.xccheckout
+*.moved-aside
+*.xcuserstate
+IDEWorkspaceChecks.plist
+
+# Build
+build/
+DerivedData/
+*.build/
+.build/
+.swiftpm/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+*.swp
+*~
+
+# CocoaPods (not used but just in case)
+Pods/
+
+# Carthage (not used)
+Carthage/Build/
+
+# SPM
+Package.resolved
+
+# Secrets
+*.env
+*.key
+*.pem
