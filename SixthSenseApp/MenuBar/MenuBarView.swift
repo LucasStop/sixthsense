@@ -75,55 +75,76 @@ struct MenuBarView: View {
     // MARK: - Footer
 
     private var footer: some View {
-        HStack(spacing: 10) {
-            Button(action: {
+        HStack(spacing: 8) {
+            versionBadge
+            Spacer()
+            actionsMenu
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+    }
+
+    private var versionBadge: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "sparkles")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text("SixthSense")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var actionsMenu: some View {
+        Menu {
+            Button {
                 openWindow(id: "tutorials")
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     NSApplication.shared.activate(ignoringOtherApps: true)
                 }
-            }) {
+            } label: {
                 Label("Tutoriais", systemImage: "book")
-                    .font(.caption)
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
 
-            Button(action: {
+            Button {
                 openWindow(id: "training-center")
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     NSApplication.shared.activate(ignoringOtherApps: true)
                 }
-            }) {
+            } label: {
                 Label("Treinamento", systemImage: "hand.raised.fingers.spread")
-                    .font(.caption)
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
 
-            Button(action: {
+            Button {
                 openSettings()
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     NSApplication.shared.activate(ignoringOtherApps: true)
                 }
-            }) {
+            } label: {
                 Label("Configurações", systemImage: "gear")
-                    .font(.caption)
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
 
-            Spacer()
+            Divider()
 
-            Button(action: {
+            Button(role: .destructive) {
                 NSApplication.shared.terminate(nil)
-            }) {
-                Label("Sair", systemImage: "power")
+            } label: {
+                Label("Sair do SixthSense", systemImage: "power")
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "ellipsis.circle")
+                    .font(.callout)
+                Text("Menu")
                     .font(.caption)
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(.secondary.opacity(0.15), in: Capsule())
+            .foregroundStyle(.primary)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
     }
 }
