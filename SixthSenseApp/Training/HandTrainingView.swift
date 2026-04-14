@@ -78,14 +78,14 @@ struct HandTrainingView: View {
                 )
             }
 
-            // Right hand in accent color
+            // Right hand in cyan, left hand in pink. The tint applies to
+            // finger chains + wrist, while individual finger dots keep
+            // their own color so you can still tell which finger is which.
             if let right {
-                HandSkeletonCanvas(snapshot: right)
+                HandSkeletonCanvas(snapshot: right, tint: .cyan)
             }
-            // Left hand in a secondary color (drawn on top)
             if let left {
-                HandSkeletonCanvas(snapshot: left)
-                    .opacity(0.95)
+                HandSkeletonCanvas(snapshot: left, tint: .pink)
             }
 
             if anyHand == nil {
@@ -97,6 +97,17 @@ struct HandTrainingView: View {
                         : "Ative o HandCommand para começar a detectar."
                 )
             }
+
+            // On-screen hint explaining which side is which
+            VStack {
+                HStack {
+                    handHint("Mão Esquerda", color: .pink)
+                    Spacer()
+                    handHint("Mão Direita", color: .cyan)
+                }
+                Spacer()
+            }
+            .padding(16)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -112,15 +123,61 @@ struct HandTrainingView: View {
 
         return VStack(spacing: 12) {
             HStack(spacing: 12) {
-                handCard(title: "Mão Direita — Cursor", gesture: rightGesture, tint: .cyan)
                 handCard(title: "Mão Esquerda — Atalhos", gesture: leftGesture, tint: .pink)
+                handCard(title: "Mão Direita — Cursor", gesture: rightGesture, tint: .cyan)
             }
 
             gestureLegend
                 .frame(maxWidth: .infinity)
                 .padding(10)
                 .background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
+
+            debugCard
         }
+    }
+
+    private var debugCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "terminal")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.5))
+                Text("Log de detecção (mais recente primeiro)")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.5))
+            }
+
+            if handModule.debugLines.isEmpty {
+                Text("—")
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.white.opacity(0.3))
+            } else {
+                ForEach(Array(handModule.debugLines.prefix(5).enumerated()), id: \.offset) { _, line in
+                    Text(line)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.black.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func handHint(_ text: String, color: Color) -> some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(color)
+                .frame(width: 8, height: 8)
+            Text(text)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.85))
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .background(.black.opacity(0.55), in: Capsule())
     }
 
     private func handCard(title: String, gesture: DetectedHandGesture, tint: Color) -> some View {

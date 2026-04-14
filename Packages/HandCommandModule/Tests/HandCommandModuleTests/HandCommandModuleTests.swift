@@ -115,25 +115,48 @@ private func makeModule() -> (HandCommandModule, MockCameraPipeline, MockOverlay
 
 @Test func handCommandScreenPointFlipsYAxis() {
     let size = CGSize(width: 1000, height: 500)
-    // Normalized (0,0) is bottom-left in Vision → screen top-left is (0, 500)
+    // With deadzone 0.0 the mapping is trivial: (0,0) in Vision → top-left
+    // in screen coords (which is (0, 500) because Vision's origin is at the
+    // bottom of the image).
     let origin = HandCommandModule.screenPoint(
         from: CGPoint(x: 0, y: 0),
         in: size,
-        sensitivity: 1.0
+        deadzone: 0.0
     )
     #expect(origin.x == 0)
     #expect(origin.y == 500)
 }
 
-@Test func handCommandScreenPointAppliesSensitivity() {
+@Test func handCommandScreenPointDeadzoneSaturatesEdges() {
     let size = CGSize(width: 1000, height: 500)
-    let double = HandCommandModule.screenPoint(
-        from: CGPoint(x: 0.5, y: 1.0),
+    // With deadzone 0.2, anything with normalized x ≤ 0.2 should saturate
+    // at screen x = 0. A normalized x = 0.1 is within the deadzone.
+    let left = HandCommandModule.screenPoint(
+        from: CGPoint(x: 0.1, y: 0.5),
         in: size,
-        sensitivity: 2.0
+        deadzone: 0.2
     )
-    #expect(double.x == 1000)  // 0.5 * 1000 * 2.0
-    #expect(double.y == 0)     // (1 - 1.0) * 500 * 2.0
+    #expect(left.x == 0)
+
+    // Symmetrically, x ≥ 0.8 should saturate at screen x = 1000.
+    let right = HandCommandModule.screenPoint(
+        from: CGPoint(x: 0.9, y: 0.5),
+        in: size,
+        deadzone: 0.2
+    )
+    #expect(right.x == 1000)
+}
+
+@Test func handCommandScreenPointRemapsCenter() {
+    let size = CGSize(width: 1000, height: 500)
+    // Center of the deadzone-adjusted usable region should be center of screen.
+    let center = HandCommandModule.screenPoint(
+        from: CGPoint(x: 0.5, y: 0.5),
+        in: size,
+        deadzone: 0.2
+    )
+    #expect(abs(center.x - 500) < 0.001)
+    #expect(abs(center.y - 250) < 0.001)
 }
 
 // MARK: - Keyboard injection via overload init
@@ -165,4 +188,26 @@ private func makeModuleWithKeyboard() -> (HandCommandModule, MockCameraPipeline,
 
     #expect(module.state == .running)
     #expect(camera.subscribeCalls.contains("hand-command"))
+}
+
+// MARK: - Debug lines
+
+@Test @MainActor func handCommandDebugLinesStartEmpty() {
+    let (module, _, _, _, _, _) = makeModule()
+    #expect(module.debugLines.isEmpty)
+}
+
+@Test @MainActor func handCommandStopClearsDebugLines() async throws {
+    let (module, _, _, _, _, _) = makeModule()
+
+    try await module.start()
+    await module.stop()
+
+    #expect(module.debugLines.isEmpty)
+}
+
+@Test @MainActor func handCommandInputDeadzoneDefault() {
+    let (module, _, _, _, _, _) = makeModule()
+    #expect(module.inputDeadzone > 0)
+    #expect(module.inputDeadzone < 0.5)
 }

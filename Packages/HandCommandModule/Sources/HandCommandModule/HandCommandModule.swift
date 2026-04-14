@@ -71,6 +71,18 @@ public final class HandCommandModule: SixthSenseModule {
     /// training window to show what just happened.
     public private(set) var lastActions: [HandAction] = []
 
+    /// Rolling log of the last few processed frames, for the training view
+    /// to show what the classifier and router are doing. Most recent first.
+    public private(set) var debugLines: [String] = []
+
+    /// Maximum number of debug lines to retain.
+    public static let debugLineLimit = 10
+
+    /// The "useful" input range along each normalized axis. Values outside
+    /// this range saturate to the screen edge, so the user only needs to
+    /// move their hand within a comfortable middle region of the frame.
+    public var inputDeadzone: CGFloat = 0.18
+
     // MARK: - Dependencies
 
     private let cameraManager: any CameraPipeline
@@ -157,6 +169,7 @@ public final class HandCommandModule: SixthSenseModule {
         latestLeftSnapshot = nil
         latestRightSnapshot = nil
         lastActions = []
+        debugLines = []
         router = HandActionRouter()
 
         state = .disabled
@@ -200,19 +213,36 @@ public final class HandCommandModule: SixthSenseModule {
     }
 
     private func handleReadings(_ readings: [HandReading]) {
-        // Pick the first reading per chirality.
+        // Split readings into known left/right and unknowns.
         var left: HandReading? = nil
         var right: HandReading? = nil
+        var unknowns: [HandReading] = []
+
         for reading in readings {
             switch reading.chirality {
             case .left  where left  == nil: left = reading
             case .right where right == nil: right = reading
-            case .unknown:
-                // Assume unknown is the right hand (cursor hand) so basic
-                // single-handed use still works on Macs that don't report
-                // chirality reliably.
-                if right == nil { right = reading }
+            case .unknown: unknowns.append(reading)
             default: break
+            }
+        }
+
+        // Assign unknowns by the wrist's x-position in the (already mirrored)
+        // image: a hand on the right side of the image is the user's right
+        // hand. If only one unknown and both slots empty, it defaults to
+        // right (cursor). If both slots empty and two unknowns, sort.
+        if !unknowns.isEmpty {
+            let sorted = unknowns.sorted { a, b in
+                let ax = a.snapshot.position(of: .wrist)?.x ?? 0
+                let bx = b.snapshot.position(of: .wrist)?.x ?? 0
+                return ax > bx  // rightmost first
+            }
+            for reading in sorted {
+                if right == nil {
+                    right = reading
+                } else if left == nil {
+                    left = reading
+                }
             }
         }
 
@@ -223,6 +253,43 @@ public final class HandCommandModule: SixthSenseModule {
         let actions = router.process(left: left, right: right)
         lastActions = actions
         dispatch(actions: actions)
+
+        recordDebug(left: left, right: right, actions: actions)
+    }
+
+    // MARK: - Debug Info
+
+    private func recordDebug(left: HandReading?, right: HandReading?, actions: [HandAction]) {
+        let leftDesc  = left.map { "L:\($0.gesture.rawValue)" } ?? "L:—"
+        let rightDesc = right.map { "R:\($0.gesture.rawValue)" } ?? "R:—"
+        let actionDesc = actions.isEmpty
+            ? "—"
+            : actions.map { Self.short(describing: $0) }.joined(separator: ",")
+        let line = "\(leftDesc)  \(rightDesc)  →  \(actionDesc)"
+
+        // Deduplicate consecutive identical lines so the log doesn't flood.
+        if debugLines.first == line { return }
+        debugLines.insert(line, at: 0)
+        if debugLines.count > Self.debugLineLimit {
+            debugLines.removeLast(debugLines.count - Self.debugLineLimit)
+        }
+    }
+
+    nonisolated static func short(describing action: HandAction) -> String {
+        switch action {
+        case .moveCursor:        return "move"
+        case .click:             return "click"
+        case .doubleClick:       return "dblClick"
+        case .dragBegin:         return "dragDown"
+        case .dragEnd:           return "dragUp"
+        case .scroll:            return "scroll"
+        case .missionControl:    return "mission"
+        case .showDesktop:       return "desktop"
+        case .switchSpaceLeft:   return "←space"
+        case .switchSpaceRight:  return "space→"
+        case .holdCommand:       return "⌘↓"
+        case .releaseCommand:    return "⌘↑"
+        }
     }
 
     // MARK: - Action dispatch
@@ -230,25 +297,26 @@ public final class HandCommandModule: SixthSenseModule {
     private func dispatch(actions: [HandAction]) {
         guard let screen = NSScreen.main else { return }
         let size = screen.frame.size
+        let deadzone = inputDeadzone
 
         for action in actions {
             switch action {
             case .moveCursor(let normalized):
-                let point = Self.screenPoint(from: normalized, in: size, sensitivity: sensitivity)
+                let point = Self.screenPoint(from: normalized, in: size, deadzone: deadzone)
                 cursorController.moveTo(point)
             case .click(let normalized):
-                let point = Self.screenPoint(from: normalized, in: size, sensitivity: sensitivity)
+                let point = Self.screenPoint(from: normalized, in: size, deadzone: deadzone)
                 cursorController.leftClick(at: point)
                 eventBus.emit(.handGestureDetected(.pinch(phase: .began, position: point)))
             case .doubleClick(let normalized):
-                let point = Self.screenPoint(from: normalized, in: size, sensitivity: sensitivity)
+                let point = Self.screenPoint(from: normalized, in: size, deadzone: deadzone)
                 cursorController.leftClick(at: point)
                 cursorController.leftClick(at: point)
             case .dragBegin(let normalized):
-                let point = Self.screenPoint(from: normalized, in: size, sensitivity: sensitivity)
+                let point = Self.screenPoint(from: normalized, in: size, deadzone: deadzone)
                 cursorController.leftMouseDown(at: point)
             case .dragEnd(let normalized):
-                let point = Self.screenPoint(from: normalized, in: size, sensitivity: sensitivity)
+                let point = Self.screenPoint(from: normalized, in: size, deadzone: deadzone)
                 cursorController.leftMouseUp(at: point)
             case .scroll(let deltaY):
                 cursorController.scroll(deltaY: deltaY, deltaX: 0)
@@ -273,31 +341,67 @@ public final class HandCommandModule: SixthSenseModule {
         }
     }
 
-    /// Convert a normalized Vision point (bottom-left origin) to screen space.
-    nonisolated static func screenPoint(from normalized: CGPoint, in size: CGSize, sensitivity: Double) -> CGPoint {
-        let x = normalized.x * size.width * sensitivity
-        let y = (1 - normalized.y) * size.height * sensitivity
+    /// Convert a normalized Vision point (bottom-left origin) to screen space
+    /// using a centered deadzone remap.
+    ///
+    /// The "useful" region of the camera frame is `[deadzone, 1 - deadzone]`
+    /// on each axis; anything outside that saturates at the screen edge. That
+    /// way the user can reach every corner of the screen without having to
+    /// move their hand all the way to the edge of the camera's view, and
+    /// hand jitter near the edges is clamped instead of flickering.
+    ///
+    /// Vision uses a bottom-left origin; macOS screen coordinates are
+    /// top-left, so Y is flipped.
+    nonisolated static func screenPoint(from normalized: CGPoint, in size: CGSize, deadzone: CGFloat) -> CGPoint {
+        let usableMin = max(0, deadzone)
+        let usableMax = min(1, 1 - deadzone)
+        let range = max(usableMax - usableMin, 0.01)
+
+        let clampedX = min(max(normalized.x, usableMin), usableMax)
+        let clampedY = min(max(normalized.y, usableMin), usableMax)
+
+        let remappedX = (clampedX - usableMin) / range
+        let remappedY = (clampedY - usableMin) / range
+
+        let x = remappedX * size.width
+        let y = (1 - remappedY) * size.height
         return CGPoint(x: x, y: y)
     }
 
     // MARK: - Reading Construction
 
     /// Build a HandReading (chirality + snapshot) from a Vision observation.
+    ///
+    /// IMPORTANT: we feed Vision a horizontally-mirrored image (`.upMirrored`)
+    /// because the front camera produces a mirror-selfie feed that users
+    /// expect to see as a mirror. But Vision reports chirality based on the
+    /// processed image, not the real-world hand — so in the mirrored feed the
+    /// user's real right hand appears on the left and gets labeled `.left`.
+    /// We invert the reported chirality here so downstream code talks about
+    /// the user's actual right/left hand.
     static func makeReading(from observation: VNHumanHandPoseObservation) -> HandReading {
-        let chirality: HandChirality
+        let reportedChirality: HandChirality
         if #available(macOS 13.0, *) {
             switch observation.chirality {
-            case .left:  chirality = .left
-            case .right: chirality = .right
-            case .unknown: chirality = .unknown
-            @unknown default: chirality = .unknown
+            case .left:       reportedChirality = .left
+            case .right:      reportedChirality = .right
+            case .unknown:    reportedChirality = .unknown
+            @unknown default: reportedChirality = .unknown
             }
         } else {
-            chirality = .unknown
+            reportedChirality = .unknown
+        }
+
+        // Flip — our input is mirrored, so Vision's left is user's right.
+        let userChirality: HandChirality
+        switch reportedChirality {
+        case .left:    userChirality = .right
+        case .right:   userChirality = .left
+        case .unknown: userChirality = .unknown
         }
 
         let snapshot = makeSnapshot(from: observation)
-        return HandReading(chirality: chirality, snapshot: snapshot)
+        return HandReading(chirality: userChirality, snapshot: snapshot)
     }
 
     /// Map a Vision observation to the neutral HandLandmarksSnapshot type.
