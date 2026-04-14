@@ -14,17 +14,41 @@ struct HandTrainingView: View {
     let cameraSession: (() -> AVCaptureSession?)
 
     @State private var showCameraFeed: Bool = true
+    @State private var diagnosticsState: AccessibilityDiagnosticsState = .unknown
+    @State private var lastProbeResult: AccessibilityDiagnostics.InjectionProbeResult?
+    @State private var copiedPath: Bool = false
+
+    private let diagnosticsTimer = Timer.publish(every: 1.5, on: .main, in: .common).autoconnect()
 
     var body: some View {
         VStack(spacing: 16) {
             header
+            diagnosticsCard
             preview
             footer
         }
         .padding(20)
-        .frame(minWidth: 520, minHeight: 600)
+        .frame(minWidth: 560, minHeight: 720)
         .background(.black.opacity(0.92))
         .preferredColorScheme(.dark)
+        .onAppear {
+            refreshDiagnostics()
+        }
+        .onReceive(diagnosticsTimer) { _ in
+            refreshDiagnostics()
+        }
+    }
+
+    // MARK: - Diagnostics state
+
+    private enum AccessibilityDiagnosticsState {
+        case unknown
+        case granted
+        case denied
+    }
+
+    private func refreshDiagnostics() {
+        diagnosticsState = AccessibilityDiagnostics.isTrusted ? .granted : .denied
     }
 
     // MARK: - Sections
@@ -52,6 +76,174 @@ struct HandTrainingView: View {
             .tint(.accentColor)
             .foregroundStyle(.white)
         }
+    }
+
+    // MARK: - Diagnostics Card
+
+    private var diagnosticsCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: diagnosticsIcon)
+                    .font(.title3)
+                    .foregroundStyle(diagnosticsColor)
+                    .frame(width: 30)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(diagnosticsTitle)
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(.white)
+                    Text(diagnosticsSubtitle)
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.6))
+                }
+
+                Spacer()
+
+                Button {
+                    lastProbeResult = AccessibilityDiagnostics.performInjectionProbe()
+                    refreshDiagnostics()
+                } label: {
+                    Label("Testar injeção", systemImage: "play.circle")
+                        .font(.caption)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .tint(.blue)
+            }
+
+            if diagnosticsState == .denied {
+                deniedPanel
+            }
+
+            if let probe = lastProbeResult {
+                probeResultLine(probe)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(diagnosticsColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(diagnosticsColor.opacity(0.35), lineWidth: 1)
+        )
+    }
+
+    private var diagnosticsIcon: String {
+        switch diagnosticsState {
+        case .unknown: return "questionmark.circle"
+        case .granted: return "checkmark.shield.fill"
+        case .denied:  return "exclamationmark.shield.fill"
+        }
+    }
+
+    private var diagnosticsColor: Color {
+        switch diagnosticsState {
+        case .unknown: return .white.opacity(0.5)
+        case .granted: return .green
+        case .denied:  return .orange
+        }
+    }
+
+    private var diagnosticsTitle: String {
+        switch diagnosticsState {
+        case .unknown: return "Verificando acessibilidade..."
+        case .granted: return "Acessibilidade OK"
+        case .denied:  return "Acessibilidade bloqueada"
+        }
+    }
+
+    private var diagnosticsSubtitle: String {
+        switch diagnosticsState {
+        case .unknown:
+            return "Aguarde..."
+        case .granted:
+            return "CGEvent pode injetar cursor e teclado. Os gestos devem funcionar."
+        case .denied:
+            return "Mesmo que apareça marcado nos Ajustes, o binário atual não está autorizado."
+        }
+    }
+
+    private var deniedPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Divider().background(.orange.opacity(0.4))
+
+            Text("Como corrigir (SPM cria um binário novo a cada build):")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.85))
+
+            VStack(alignment: .leading, spacing: 4) {
+                stepLine("1.", "Abra Ajustes do Sistema → Privacidade → Acessibilidade.")
+                stepLine("2.", "REMOVA toda entrada \"SixthSense\" existente (clique \"-\").")
+                stepLine("3.", "Clique em \"+\" e adicione o binário com o caminho abaixo.")
+                stepLine("4.", "Reative o HandCommand. Os gestos devem funcionar.")
+            }
+
+            HStack(spacing: 8) {
+                Image(systemName: "doc.on.doc")
+                    .foregroundStyle(.white.opacity(0.5))
+                    .font(.caption)
+                Text(AccessibilityDiagnostics.executablePath)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.8))
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.black.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
+
+            HStack(spacing: 8) {
+                Button {
+                    AccessibilityDiagnostics.copyExecutablePathToPasteboard()
+                    copiedPath = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                        copiedPath = false
+                    }
+                } label: {
+                    Label(copiedPath ? "Copiado!" : "Copiar caminho", systemImage: "doc.on.clipboard")
+                        .font(.caption)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Button {
+                    AccessibilityDiagnostics.openAccessibilitySettings()
+                } label: {
+                    Label("Abrir Ajustes", systemImage: "gear")
+                        .font(.caption)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Spacer()
+            }
+        }
+    }
+
+    private func stepLine(_ num: String, _ text: String) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Text(num)
+                .font(.caption.monospaced().weight(.bold))
+                .foregroundStyle(.orange)
+            Text(text)
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.85))
+            Spacer()
+        }
+    }
+
+    private func probeResultLine(_ probe: AccessibilityDiagnostics.InjectionProbeResult) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: probe.isSuccess ? "checkmark.circle.fill" : "xmark.octagon.fill")
+                .foregroundStyle(probe.isSuccess ? .green : .red)
+                .font(.caption)
+            Text("Último teste: \(probe.label)")
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.75))
+            Spacer()
+        }
+        .padding(.top, 4)
     }
 
     @ViewBuilder
