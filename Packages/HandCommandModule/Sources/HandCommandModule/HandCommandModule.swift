@@ -201,7 +201,8 @@ public final class HandCommandModule: SixthSenseModule {
         }
     }
 
-    private func handleNoHands() {
+    /// Internal for tests — call with empty readings from a fake pipeline.
+    func handleNoHands() {
         latestSnapshot = nil
         latestLeftSnapshot = nil
         latestRightSnapshot = nil
@@ -212,7 +213,11 @@ public final class HandCommandModule: SixthSenseModule {
         dispatch(actions: actions)
     }
 
-    private func handleReadings(_ readings: [HandReading]) {
+    /// Internal for tests — call this directly to bypass the camera and
+    /// exercise the full snapshot → router → dispatch pipeline with fake
+    /// readings. Tests observe `lastActions`, `debugLines`, and the mock
+    /// cursor / keyboard to verify behaviour.
+    func handleReadings(_ readings: [HandReading]) {
         // Split readings into known left/right and unknowns.
         var left: HandReading? = nil
         var right: HandReading? = nil
