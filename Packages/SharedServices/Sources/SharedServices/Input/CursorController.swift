@@ -67,6 +67,35 @@ public final class CursorController: @unchecked Sendable {
         event.post(tap: .cgSessionEventTap)
     }
 
+    // MARK: - Keyboard
+
+    /// Press and immediately release a key with optional modifiers.
+    /// Used to trigger Mission Control, Spaces, and other global shortcuts
+    /// in response to hand gestures.
+    public func pressKey(keyCode: CGKeyCode, modifiers: CGEventFlags = []) {
+        guard let down = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: true),
+              let up = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: false) else { return }
+        down.flags = modifiers
+        up.flags = modifiers
+        down.post(tap: .cghidEventTap)
+        up.post(tap: .cghidEventTap)
+    }
+
+    /// Post only a key-down event, leaving the key held. Pair with
+    /// `releaseKey(keyCode:modifiers:)` to implement modifier hold gestures.
+    public func holdKey(keyCode: CGKeyCode, modifiers: CGEventFlags = []) {
+        guard let down = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: true) else { return }
+        down.flags = modifiers
+        down.post(tap: .cghidEventTap)
+    }
+
+    /// Post a key-up event, releasing a previously-held key.
+    public func releaseKey(keyCode: CGKeyCode, modifiers: CGEventFlags = []) {
+        guard let up = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: false) else { return }
+        up.flags = modifiers
+        up.post(tap: .cghidEventTap)
+    }
+
     // MARK: - Private
 
     private func postMouseEvent(_ type: CGEventType, at point: CGPoint, button: CGMouseButton) {

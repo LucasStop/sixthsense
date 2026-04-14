@@ -1,4 +1,7 @@
 import SwiftUI
+import AppKit
+import CoreGraphics
+import ApplicationServices
 @preconcurrency import Vision
 import Combine
 import CoreMedia
@@ -7,8 +10,15 @@ import SharedServices
 
 // MARK: - HandCommand Module
 
-/// Tracks the user's hand via the webcam and translates gestures into
-/// desktop actions: cursor movement, pinch-to-click, grab-to-move windows, etc.
+/// Tracks both of the user's hands via the webcam and translates gestures into
+/// real desktop actions:
+///
+///   • Right hand: cursor movement, click/double-click, drag, scroll.
+///   • Left  hand: Mission Control, Show Desktop, switch Space, hold Command.
+///
+/// The pure classification and action routing lives in `HandGestureClassifier`
+/// and `HandActionRouter` (both in SixthSenseCore), so the Vision/CGEvent
+/// glue here stays thin.
 @MainActor
 @Observable
 public final class HandCommandModule: SixthSenseModule {
@@ -45,11 +55,21 @@ public final class HandCommandModule: SixthSenseModule {
     /// Sensitivity multiplier for cursor movement (0.1 ... 3.0).
     public var sensitivity: Double = 1.0
 
-    // MARK: - Live Snapshot
+    // MARK: - Live Snapshots
 
-    /// The most recent hand-tracking snapshot (21 landmarks + classified gesture).
-    /// Consumed by the training/visualizer view. `nil` when no hand is detected.
+    /// Snapshot of whichever hand was seen most recently (kept for backward
+    /// compatibility — training views can read either side).
     public private(set) var latestSnapshot: HandLandmarksSnapshot?
+
+    /// The last right-hand reading (cursor hand).
+    public private(set) var latestRightSnapshot: HandLandmarksSnapshot?
+
+    /// The last left-hand reading (modifier hand).
+    public private(set) var latestLeftSnapshot: HandLandmarksSnapshot?
+
+    /// Live actions emitted on the most recent frame — useful for the
+    /// training window to show what just happened.
+    public private(set) var lastActions: [HandAction] = []
 
     // MARK: - Dependencies
 
@@ -57,13 +77,21 @@ public final class HandCommandModule: SixthSenseModule {
     private let overlayManager: any OverlayPresenter
     private let accessibilityService: any WindowAccessibility
     private let cursorController: any MouseController
+    private let keyboardInput: any KeyboardInput
     private let eventBus: EventBus
 
     private let handPoseQueue = DispatchQueue(label: "com.sixthsense.handcommand.vision", qos: .userInteractive)
     private let handPoseRequest = VNDetectHumanHandPoseRequest()
 
+    /// Pure state machine that converts raw readings into actions.
+    private var router = HandActionRouter()
+
     // MARK: - Init
 
+    /// - Parameters:
+    ///   - cursorController: must also conform to KeyboardInput for left-hand
+    ///     shortcuts. The real CursorController does; tests can pass separate
+    ///     mocks via the overload below.
     public init(
         cameraManager: any CameraPipeline,
         overlayManager: any OverlayPresenter,
@@ -71,10 +99,33 @@ public final class HandCommandModule: SixthSenseModule {
         cursorController: any MouseController,
         eventBus: EventBus
     ) {
+        // The concrete CursorController conforms to both protocols, so we try
+        // to reuse it as the keyboard backend. Tests can use the overload
+        // below to inject a separate mock keyboard.
         self.cameraManager = cameraManager
         self.overlayManager = overlayManager
         self.accessibilityService = accessibilityService
         self.cursorController = cursorController
+        self.keyboardInput = (cursorController as? KeyboardInput) ?? NoopKeyboardInput()
+        self.eventBus = eventBus
+
+        handPoseRequest.maximumHandCount = 2
+    }
+
+    /// Test-friendly overload that accepts a dedicated keyboard controller.
+    public init(
+        cameraManager: any CameraPipeline,
+        overlayManager: any OverlayPresenter,
+        accessibilityService: any WindowAccessibility,
+        cursorController: any MouseController,
+        keyboardInput: any KeyboardInput,
+        eventBus: EventBus
+    ) {
+        self.cameraManager = cameraManager
+        self.overlayManager = overlayManager
+        self.accessibilityService = accessibilityService
+        self.cursorController = cursorController
+        self.keyboardInput = keyboardInput
         self.eventBus = eventBus
 
         handPoseRequest.maximumHandCount = 2
@@ -96,6 +147,18 @@ public final class HandCommandModule: SixthSenseModule {
         state = .stopping
         cameraManager.unsubscribe(id: Self.descriptor.id)
         overlayManager.removeOverlay(id: Self.descriptor.id)
+
+        // Release any modifiers that might have been left held.
+        if router.isCommandHeld {
+            keyboardInput.releaseKey(keyCode: CGKeyCode(0x37), modifiers: [])
+        }
+
+        latestSnapshot = nil
+        latestLeftSnapshot = nil
+        latestRightSnapshot = nil
+        lastActions = []
+        router = HandActionRouter()
+
         state = .disabled
     }
 
@@ -110,62 +173,134 @@ public final class HandCommandModule: SixthSenseModule {
             guard let self else { return }
             do {
                 try handler.perform([self.handPoseRequest])
-                guard let observation = self.handPoseRequest.results?.first else {
-                    Task { @MainActor in
-                        self.latestSnapshot = nil
-                        self.eventBus.emit(.handTrackingLost)
-                    }
+                let observations = self.handPoseRequest.results ?? []
+                if observations.isEmpty {
+                    Task { @MainActor in self.handleNoHands() }
                     return
                 }
-                self.handleHandObservation(observation)
+
+                // Build one reading per observation on the Vision queue.
+                let readings = observations.map { Self.makeReading(from: $0) }
+                Task { @MainActor in self.handleReadings(readings) }
             } catch {
                 // Vision request failed; silently skip this frame.
             }
         }
     }
 
-    private func handleHandObservation(_ observation: VNHumanHandPoseObservation) {
-        // Build a full snapshot of every joint Vision reports, at normalized coords.
-        let snapshot = Self.makeSnapshot(from: observation)
+    private func handleNoHands() {
+        latestSnapshot = nil
+        latestLeftSnapshot = nil
+        latestRightSnapshot = nil
+        eventBus.emit(.handTrackingLost)
 
-        guard let indexTipLandmark = snapshot.landmarks[.indexTip],
-              let thumbTipLandmark = snapshot.landmarks[.thumbTip],
-              indexTipLandmark.isConfident, thumbTipLandmark.isConfident else {
-            Task { @MainActor in self.latestSnapshot = snapshot }
-            return
+        // Drive the router with nil/nil so it can release holds gracefully.
+        let actions = router.process(left: nil, right: nil)
+        dispatch(actions: actions)
+    }
+
+    private func handleReadings(_ readings: [HandReading]) {
+        // Pick the first reading per chirality.
+        var left: HandReading? = nil
+        var right: HandReading? = nil
+        for reading in readings {
+            switch reading.chirality {
+            case .left  where left  == nil: left = reading
+            case .right where right == nil: right = reading
+            case .unknown:
+                // Assume unknown is the right hand (cursor hand) so basic
+                // single-handed use still works on Macs that don't report
+                // chirality reliably.
+                if right == nil { right = reading }
+            default: break
+            }
         }
 
-        let indexTip = indexTipLandmark.position
-        let thumbTip = thumbTipLandmark.position
+        latestLeftSnapshot  = left?.snapshot
+        latestRightSnapshot = right?.snapshot
+        latestSnapshot      = right?.snapshot ?? left?.snapshot
 
-        // Compute pinch distance for gesture detection
-        let pinchDistance = hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y)
+        let actions = router.process(left: left, right: right)
+        lastActions = actions
+        dispatch(actions: actions)
+    }
 
-        // Convert normalised Vision coordinates to screen coordinates
-        guard let screen = NSScreen.main else {
-            Task { @MainActor in self.latestSnapshot = snapshot }
-            return
-        }
-        let screenSize = screen.frame.size
-        let cursorX = indexTip.x * screenSize.width * sensitivity
-        let cursorY = (1 - indexTip.y) * screenSize.height * sensitivity
+    // MARK: - Action dispatch
 
-        Task { @MainActor [cursorController, eventBus, cursorX, cursorY, pinchDistance, snapshot] in
-            self.latestSnapshot = snapshot
+    private func dispatch(actions: [HandAction]) {
+        guard let screen = NSScreen.main else { return }
+        let size = screen.frame.size
 
-            cursorController.moveTo(CGPoint(x: cursorX, y: cursorY))
-
-            if pinchDistance < 0.05 {
-                eventBus.emit(.handGestureDetected(.pinch(phase: .began, position: CGPoint(x: cursorX, y: cursorY))))
+        for action in actions {
+            switch action {
+            case .moveCursor(let normalized):
+                let point = Self.screenPoint(from: normalized, in: size, sensitivity: sensitivity)
+                cursorController.moveTo(point)
+            case .click(let normalized):
+                let point = Self.screenPoint(from: normalized, in: size, sensitivity: sensitivity)
+                cursorController.leftClick(at: point)
+                eventBus.emit(.handGestureDetected(.pinch(phase: .began, position: point)))
+            case .doubleClick(let normalized):
+                let point = Self.screenPoint(from: normalized, in: size, sensitivity: sensitivity)
+                cursorController.leftClick(at: point)
+                cursorController.leftClick(at: point)
+            case .dragBegin(let normalized):
+                let point = Self.screenPoint(from: normalized, in: size, sensitivity: sensitivity)
+                cursorController.leftMouseDown(at: point)
+            case .dragEnd(let normalized):
+                let point = Self.screenPoint(from: normalized, in: size, sensitivity: sensitivity)
+                cursorController.leftMouseUp(at: point)
+            case .scroll(let deltaY):
+                cursorController.scroll(deltaY: deltaY, deltaX: 0)
+            case .missionControl:
+                // Control + Up Arrow
+                keyboardInput.pressKey(keyCode: CGKeyCode(0x7E), modifiers: .maskControl)
+            case .showDesktop:
+                // F11 toggles show desktop
+                keyboardInput.pressKey(keyCode: CGKeyCode(0x67), modifiers: [])
+            case .switchSpaceLeft:
+                // Control + Left Arrow
+                keyboardInput.pressKey(keyCode: CGKeyCode(0x7B), modifiers: .maskControl)
+            case .switchSpaceRight:
+                // Control + Right Arrow
+                keyboardInput.pressKey(keyCode: CGKeyCode(0x7C), modifiers: .maskControl)
+            case .holdCommand:
+                // 0x37 is Command key
+                keyboardInput.holdKey(keyCode: CGKeyCode(0x37), modifiers: [])
+            case .releaseCommand:
+                keyboardInput.releaseKey(keyCode: CGKeyCode(0x37), modifiers: [])
             }
         }
     }
 
-    // MARK: - Snapshot Construction
+    /// Convert a normalized Vision point (bottom-left origin) to screen space.
+    nonisolated static func screenPoint(from normalized: CGPoint, in size: CGSize, sensitivity: Double) -> CGPoint {
+        let x = normalized.x * size.width * sensitivity
+        let y = (1 - normalized.y) * size.height * sensitivity
+        return CGPoint(x: x, y: y)
+    }
+
+    // MARK: - Reading Construction
+
+    /// Build a HandReading (chirality + snapshot) from a Vision observation.
+    static func makeReading(from observation: VNHumanHandPoseObservation) -> HandReading {
+        let chirality: HandChirality
+        if #available(macOS 13.0, *) {
+            switch observation.chirality {
+            case .left:  chirality = .left
+            case .right: chirality = .right
+            case .unknown: chirality = .unknown
+            @unknown default: chirality = .unknown
+            }
+        } else {
+            chirality = .unknown
+        }
+
+        let snapshot = makeSnapshot(from: observation)
+        return HandReading(chirality: chirality, snapshot: snapshot)
+    }
 
     /// Map a Vision observation to the neutral HandLandmarksSnapshot type.
-    /// Extracted as a static method so it can be tested independently of the
-    /// module's live state.
     static func makeSnapshot(from observation: VNHumanHandPoseObservation) -> HandLandmarksSnapshot {
         var landmarks: [HandJoint: HandLandmark] = [:]
 
@@ -179,21 +314,16 @@ public final class HandCommandModule: SixthSenseModule {
             landmarks[coreJoint] = landmark
         }
 
-        let snapshot = HandLandmarksSnapshot(
-            landmarks: landmarks,
-            gesture: .none
-        )
-        // Re-classify using the pure classifier so the snapshot carries a gesture.
-        let classified = HandGestureClassifier.classify(snapshot)
+        let pending = HandLandmarksSnapshot(landmarks: landmarks, gesture: .none)
+        let classified = HandGestureClassifier.classify(pending)
         return HandLandmarksSnapshot(
             landmarks: landmarks,
             gesture: classified,
-            timestamp: snapshot.timestamp
+            timestamp: pending.timestamp
         )
     }
 
     /// Explicit mapping from Vision's joint names to our Core HandJoint enum.
-    /// Kept here (not in Core) so Core has no Vision dependency.
     private static let jointMapping: [(VNHumanHandPoseObservation.JointName, HandJoint)] = [
         (.wrist,       .wrist),
         (.thumbCMC,    .thumbCMC),
@@ -238,4 +368,15 @@ public final class HandCommandModule: SixthSenseModule {
             }
         }
     }
+}
+
+// MARK: - Noop Keyboard
+
+/// Fallback used when the injected cursorController doesn't also conform to
+/// KeyboardInput. All calls are no-ops, so the left-hand shortcuts become
+/// silent but nothing crashes. Tests should pass an explicit mock instead.
+private struct NoopKeyboardInput: KeyboardInput {
+    func pressKey(keyCode: CGKeyCode, modifiers: CGEventFlags) {}
+    func holdKey(keyCode: CGKeyCode, modifiers: CGEventFlags) {}
+    func releaseKey(keyCode: CGKeyCode, modifiers: CGEventFlags) {}
 }
