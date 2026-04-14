@@ -41,16 +41,16 @@ public final class AirCursorModule: SixthSenseModule {
 
     // MARK: - Dependencies
 
-    private let bonjourService: BonjourService
-    private let cursorController: CursorController
+    private let bonjourService: any PeerNetwork
+    private let cursorController: any MouseController
 
     private var messageCancellable: AnyCancellable?
 
     // MARK: - Init
 
     public init(
-        bonjourService: BonjourService,
-        cursorController: CursorController
+        bonjourService: any PeerNetwork,
+        cursorController: any MouseController
     ) {
         self.bonjourService = bonjourService
         self.cursorController = cursorController

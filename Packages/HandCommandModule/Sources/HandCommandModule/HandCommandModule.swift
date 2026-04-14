@@ -47,10 +47,10 @@ public final class HandCommandModule: SixthSenseModule {
 
     // MARK: - Dependencies
 
-    private let cameraManager: CameraManager
-    private let overlayManager: OverlayWindowManager
-    private let accessibilityService: AccessibilityService
-    private let cursorController: CursorController
+    private let cameraManager: any CameraPipeline
+    private let overlayManager: any OverlayPresenter
+    private let accessibilityService: any WindowAccessibility
+    private let cursorController: any MouseController
     private let eventBus: EventBus
 
     private let handPoseQueue = DispatchQueue(label: "com.sixthsense.handcommand.vision", qos: .userInteractive)
@@ -59,10 +59,10 @@ public final class HandCommandModule: SixthSenseModule {
     // MARK: - Init
 
     public init(
-        cameraManager: CameraManager,
-        overlayManager: OverlayWindowManager,
-        accessibilityService: AccessibilityService,
-        cursorController: CursorController,
+        cameraManager: any CameraPipeline,
+        overlayManager: any OverlayPresenter,
+        accessibilityService: any WindowAccessibility,
+        cursorController: any MouseController,
         eventBus: EventBus
     ) {
         self.cameraManager = cameraManager

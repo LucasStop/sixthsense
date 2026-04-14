@@ -43,8 +43,8 @@ public final class GhostDropModule: SixthSenseModule {
 
     // MARK: - Dependencies
 
-    private let cameraManager: CameraManager
-    private let bonjourService: BonjourService
+    private let cameraManager: any CameraPipeline
+    private let bonjourService: any PeerNetwork
     private let eventBus: EventBus
 
     private var eventCancellable: AnyCancellable?
@@ -57,8 +57,8 @@ public final class GhostDropModule: SixthSenseModule {
     // MARK: - Init
 
     public init(
-        cameraManager: CameraManager,
-        bonjourService: BonjourService,
+        cameraManager: any CameraPipeline,
+        bonjourService: any PeerNetwork,
         eventBus: EventBus
     ) {
         self.cameraManager = cameraManager

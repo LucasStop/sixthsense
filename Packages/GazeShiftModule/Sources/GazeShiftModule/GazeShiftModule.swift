@@ -47,9 +47,9 @@ public final class GazeShiftModule: SixthSenseModule {
 
     // MARK: - Dependencies
 
-    private let cameraManager: CameraManager
-    private let overlayManager: OverlayWindowManager
-    private let accessibilityService: AccessibilityService
+    private let cameraManager: any CameraPipeline
+    private let overlayManager: any OverlayPresenter
+    private let accessibilityService: any WindowAccessibility
 
     private let visionQueue = DispatchQueue(label: "com.sixthsense.gazeshift.vision", qos: .userInteractive)
     private let faceLandmarksRequest = VNDetectFaceLandmarksRequest()
@@ -57,9 +57,9 @@ public final class GazeShiftModule: SixthSenseModule {
     // MARK: - Init
 
     public init(
-        cameraManager: CameraManager,
-        overlayManager: OverlayWindowManager,
-        accessibilityService: AccessibilityService
+        cameraManager: any CameraPipeline,
+        overlayManager: any OverlayPresenter,
+        accessibilityService: any WindowAccessibility
     ) {
         self.cameraManager = cameraManager
         self.overlayManager = overlayManager

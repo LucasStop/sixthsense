@@ -48,13 +48,13 @@ public final class PortalViewModule: SixthSenseModule {
 
     // MARK: - Dependencies
 
-    private let bonjourService: BonjourService
+    private let bonjourService: any PeerNetwork
 
     private var messageCancellable: AnyCancellable?
 
     // MARK: - Init
 
-    public init(bonjourService: BonjourService) {
+    public init(bonjourService: any PeerNetwork) {
         self.bonjourService = bonjourService
     }
 
