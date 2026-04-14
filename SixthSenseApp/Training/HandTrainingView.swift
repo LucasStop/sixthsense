@@ -11,6 +11,7 @@ import HandCommandModule
 /// ajuda visual para o usuário aprender os gestos disponíveis.
 struct HandTrainingView: View {
     let handModule: HandCommandModule
+    let faceRecognition: FaceRecognitionManager
     let cameraSession: (() -> AVCaptureSession?)
 
     @State private var showCameraFeed: Bool = true
@@ -24,11 +25,12 @@ struct HandTrainingView: View {
         VStack(spacing: 16) {
             header
             diagnosticsCard
+            faceLockCard
             preview
             footer
         }
         .padding(20)
-        .frame(minWidth: 560, minHeight: 720)
+        .frame(minWidth: 560, minHeight: 760)
         .background(.black.opacity(0.92))
         .preferredColorScheme(.dark)
         .onAppear {
@@ -37,6 +39,73 @@ struct HandTrainingView: View {
         .onReceive(diagnosticsTimer) { _ in
             refreshDiagnostics()
         }
+    }
+
+    // MARK: - Face lock card
+
+    @ViewBuilder
+    private var faceLockCard: some View {
+        let state = faceRecognition.state
+
+        if state.mode == .disabled {
+            // Don't take up space when the user has no face lock configured.
+            EmptyView()
+        } else {
+            HStack(spacing: 12) {
+                Image(systemName: faceLockIcon(for: state))
+                    .font(.title3)
+                    .foregroundStyle(faceLockColor(for: state))
+                    .frame(width: 30)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(state.statusLabel)
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(.white)
+                    Text("Modo: \(state.mode.label)")
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.6))
+                }
+
+                Spacer()
+
+                if let dist = state.recognitionDistance, state.mode == .enrolledFace {
+                    VStack(alignment: .trailing, spacing: 1) {
+                        Text("Distância")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.white.opacity(0.5))
+                        Text(String(format: "%.1f", dist))
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.white.opacity(0.85))
+                    }
+                }
+
+                Circle()
+                    .fill(state.canUseGestures ? Color.green : Color.red)
+                    .frame(width: 10, height: 10)
+                    .shadow(color: state.canUseGestures ? .green : .red, radius: 4)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(
+                faceLockColor(for: state).opacity(0.10),
+                in: RoundedRectangle(cornerRadius: 10)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(faceLockColor(for: state).opacity(0.35), lineWidth: 1)
+            )
+        }
+    }
+
+    private func faceLockIcon(for state: FaceRecognitionState) -> String {
+        if !state.isFaceDetected { return "face.dashed" }
+        if !state.isLookingAtScreen { return "eye.slash" }
+        if state.mode == .enrolledFace && !state.isRecognizedUser { return "person.crop.circle.badge.xmark" }
+        return "person.crop.circle.badge.checkmark"
+    }
+
+    private func faceLockColor(for state: FaceRecognitionState) -> Color {
+        state.canUseGestures ? .green : .orange
     }
 
     // MARK: - Diagnostics state

@@ -18,6 +18,11 @@ struct SettingsView: View {
                     Label("HandCommand", systemImage: "hand.raised.fingers.spread")
                 }
 
+            FaceLockSettingsTab(faceRecognition: appState.services.faceRecognition)
+                .tabItem {
+                    Label("Reconhecimento", systemImage: "person.crop.circle")
+                }
+
             PermissionsSettingsTab(permissions: appState.services.permissions)
                 .tabItem {
                     Label("Permissões", systemImage: "lock.shield")
@@ -28,7 +33,117 @@ struct SettingsView: View {
                     Label("Sobre", systemImage: "info.circle")
                 }
         }
-        .frame(width: 560, height: 460)
+        .frame(width: 580, height: 500)
+    }
+}
+
+// MARK: - Face Lock tab
+
+private struct FaceLockSettingsTab: View {
+    let faceRecognition: FaceRecognitionManager
+    @State private var selectedMode: FaceLockMode = .disabled
+
+    var body: some View {
+        Form {
+            Section {
+                Picker("Modo", selection: $selectedMode) {
+                    ForEach(FaceLockMode.allCases, id: \.self) { mode in
+                        Label(mode.label, systemImage: mode.systemImage)
+                            .tag(mode)
+                    }
+                }
+                .pickerStyle(.inline)
+                .onChange(of: selectedMode) { _, newValue in
+                    // Switching to enrolledFace only makes sense if there's
+                    // an enrollment. If there isn't, bounce the user to
+                    // the enrollment flow and revert for now.
+                    if newValue == .enrolledFace && !faceRecognition.store.hasEnrolledFace {
+                        NotificationCenter.default.post(
+                            name: .sixthSenseOpenEnrollment,
+                            object: nil
+                        )
+                        selectedMode = faceRecognition.store.lockMode
+                        return
+                    }
+                    faceRecognition.setLockMode(newValue)
+                }
+
+                Text(selectedMode.description)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } header: {
+                Text("Bloqueio por Rosto")
+            }
+
+            Section {
+                HStack(spacing: 12) {
+                    Image(systemName: faceRecognition.store.hasEnrolledFace
+                          ? "person.crop.circle.fill.badge.checkmark"
+                          : "person.crop.circle.badge.xmark")
+                        .font(.title2)
+                        .foregroundStyle(faceRecognition.store.hasEnrolledFace ? .green : .secondary)
+                        .frame(width: 36)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(faceRecognition.store.hasEnrolledFace
+                             ? "Rosto cadastrado"
+                             : "Nenhum rosto cadastrado")
+                            .font(.callout.weight(.medium))
+                        if let enrolledAt = faceRecognition.store.enrolledAt {
+                            Text("Cadastrado em \(enrolledAt.formatted(date: .abbreviated, time: .shortened))")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("Cadastre o seu rosto para ativar o modo \"Apenas eu\".")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Spacer()
+                }
+                .padding(.vertical, 4)
+
+                HStack {
+                    Button {
+                        NotificationCenter.default.post(
+                            name: .sixthSenseOpenEnrollment,
+                            object: nil
+                        )
+                    } label: {
+                        Label(
+                            faceRecognition.store.hasEnrolledFace ? "Cadastrar novamente" : "Cadastrar rosto",
+                            systemImage: "face.smiling"
+                        )
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    if faceRecognition.store.hasEnrolledFace {
+                        Button(role: .destructive) {
+                            faceRecognition.clearEnrollment()
+                            selectedMode = .disabled
+                        } label: {
+                            Label("Remover cadastro", systemImage: "trash")
+                        }
+                        .buttonStyle(.bordered)
+                    }
+
+                    Spacer()
+                }
+            } header: {
+                Text("Cadastro")
+            } footer: {
+                Text("O rosto é armazenado localmente em ~/Library/Application Support/SixthSense/ como um vetor de características do Vision framework. Nenhuma imagem ou foto é salva; o dado nunca sai do seu Mac.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .padding()
+        .onAppear {
+            selectedMode = faceRecognition.store.lockMode
+        }
     }
 }
 

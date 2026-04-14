@@ -14,14 +14,17 @@ public final class SharedServiceContainer {
     public let permissions: PermissionsManager
     public let eventBus: EventBus
     public let settings: ModuleSettingsStore
+    public let faceRecognition: FaceRecognitionManager
 
     public init() {
         self.eventBus = EventBus()
         self.permissions = PermissionsManager()
-        self.camera = CameraManager()
+        let camera = CameraManager()
+        self.camera = camera
         self.overlay = OverlayWindowManager()
         self.accessibility = AccessibilityService()
         self.input = CursorController()
         self.settings = ModuleSettingsStore()
+        self.faceRecognition = FaceRecognitionManager(cameraManager: camera)
     }
 }

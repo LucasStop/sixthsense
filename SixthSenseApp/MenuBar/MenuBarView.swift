@@ -198,6 +198,12 @@ struct MenuBarView: View {
                 Label("Configuração Inicial", systemImage: "checklist")
             }
 
+            Button {
+                NotificationCenter.default.post(name: .sixthSenseOpenEnrollment, object: nil)
+            } label: {
+                Label("Reconhecimento Facial", systemImage: "face.dashed")
+            }
+
             Divider()
 
             Button(role: .destructive) {

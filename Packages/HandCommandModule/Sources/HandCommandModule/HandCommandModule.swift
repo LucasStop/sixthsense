@@ -92,6 +92,13 @@ public final class HandCommandModule: SixthSenseModule {
     private let keyboardInput: any KeyboardInput
     private let eventBus: EventBus
 
+    /// Optional face recognition gate. When present, dispatch is blocked
+    /// whenever `faceGate.canUseGestures == false` (no face detected,
+    /// looking away, unrecognized user, etc.). When `nil`, dispatch is
+    /// always allowed — useful for tests and for when the user disables
+    /// face lock entirely.
+    public var faceGate: (any FaceGate)?
+
     private let handPoseQueue = DispatchQueue(label: "com.sixthsense.handcommand.vision", qos: .userInteractive)
     private let handPoseRequest = VNDetectHumanHandPoseRequest()
 
@@ -298,6 +305,14 @@ public final class HandCommandModule: SixthSenseModule {
         guard let screen = NSScreen.main else { return }
         let size = screen.frame.size
         let deadzone = inputDeadzone
+
+        // Face recognition gate. When a gate is attached and denies
+        // access, we suppress every cursor/keyboard action this frame but
+        // still update latestSnapshot / lastActions / debugLines so the
+        // training view reflects what the classifier is seeing.
+        if let gate = faceGate, !gate.canUseGestures {
+            return
+        }
 
         for action in actions {
             switch action {
