@@ -19,16 +19,21 @@ final class ModuleRegistry {
     private(set) var modules: [AnyModule] = []
     private let services: SharedServiceContainer
 
-    /// Concrete HandCommand reference, kept so the Training window can
-    /// observe its live `latestSnapshot`. The same instance is also wrapped
-    /// in the AnyModule registered in `modules`.
+    /// Concrete references to each module, kept so the Training center can
+    /// observe their live state properties. The same instances are also
+    /// wrapped in AnyModules inside `modules`.
     let handCommand: HandCommandModule
+    let gazeShift: GazeShiftModule
+    let airCursor: AirCursorModule
+    let portalView: PortalViewModule
+    let ghostDrop: GhostDropModule
+    let notchBar: NotchBarModule
 
     init(services: SharedServiceContainer) {
         self.services = services
 
-        // Create the concrete HandCommand first so we can retain a typed
-        // reference for the Training view while still registering it.
+        // Create the concrete modules up front so we can retain typed
+        // references for the Training views while still registering them.
         let handCommand = HandCommandModule(
             cameraManager: services.camera,
             overlayManager: services.overlay,
@@ -36,31 +41,41 @@ final class ModuleRegistry {
             cursorController: services.input,
             eventBus: services.eventBus
         )
-        self.handCommand = handCommand
+        let gazeShift = GazeShiftModule(
+            cameraManager: services.camera,
+            overlayManager: services.overlay,
+            accessibilityService: services.accessibility
+        )
+        let airCursor = AirCursorModule(
+            bonjourService: services.network,
+            cursorController: services.input
+        )
+        let portalView = PortalViewModule(
+            bonjourService: services.network
+        )
+        let ghostDrop = GhostDropModule(
+            cameraManager: services.camera,
+            bonjourService: services.network,
+            eventBus: services.eventBus
+        )
+        let notchBar = NotchBarModule(
+            overlay: services.overlay
+        )
 
-        // Register all modules — explicit, compile-time safe, wrapped in AnyModule
+        self.handCommand = handCommand
+        self.gazeShift = gazeShift
+        self.airCursor = airCursor
+        self.portalView = portalView
+        self.ghostDrop = ghostDrop
+        self.notchBar = notchBar
+
         modules = [
             AnyModule(handCommand),
-            AnyModule(GazeShiftModule(
-                cameraManager: services.camera,
-                overlayManager: services.overlay,
-                accessibilityService: services.accessibility
-            )),
-            AnyModule(AirCursorModule(
-                bonjourService: services.network,
-                cursorController: services.input
-            )),
-            AnyModule(PortalViewModule(
-                bonjourService: services.network
-            )),
-            AnyModule(GhostDropModule(
-                cameraManager: services.camera,
-                bonjourService: services.network,
-                eventBus: services.eventBus
-            )),
-            AnyModule(NotchBarModule(
-                overlay: services.overlay
-            ))
+            AnyModule(gazeShift),
+            AnyModule(airCursor),
+            AnyModule(portalView),
+            AnyModule(ghostDrop),
+            AnyModule(notchBar),
         ]
     }
 

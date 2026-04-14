@@ -67,3 +67,32 @@ private func makeModule() -> (GhostDropModule, MockCameraPipeline, MockPeerNetwo
     // No subscribe should have happened (fallback delay is 2s)
     #expect(camera.subscribeCalls.isEmpty)
 }
+
+// MARK: - Training-view state
+
+@Test @MainActor func ghostDropStartsWithEmptyHistory() {
+    let (module, _, _, _) = makeModule()
+    #expect(module.clipboardPreview == nil)
+    #expect(module.recentTransfers.isEmpty)
+}
+
+@Test @MainActor func ghostDropStopResetsHistory() async throws {
+    let (module, _, _, _) = makeModule()
+
+    try await module.start()
+    await module.stop()
+
+    #expect(module.clipboardPreview == nil)
+    #expect(module.recentTransfers.isEmpty)
+}
+
+@Test @MainActor func ghostDropDiscoveredPeersExposedForTraining() {
+    let (module, _, _, _) = makeModule()
+    // Starts empty; property just mirrors bonjour state.
+    #expect(module.discoveredPeers.isEmpty)
+}
+
+@Test func ghostDropTransferHasSensibleLabels() {
+    #expect(GhostDropTransfer.Direction.sent.label == "Enviado")
+    #expect(GhostDropTransfer.Direction.received.label == "Recebido")
+}

@@ -46,6 +46,22 @@ public final class PortalViewModule: SixthSenseModule {
     /// Target frame rate for streaming.
     public var targetFPS: Int = 30
 
+    // MARK: - Live State
+
+    /// Advertised service name (derived at start() time) so the training view
+    /// can display the exact name companion devices should look for.
+    public private(set) var advertisedName: String?
+
+    /// Peers discovered on the local network, exposed for the training view.
+    public var discoveredPeers: [DiscoveredPeer] {
+        bonjourService.discoveredPeers
+    }
+
+    /// Whether the module is currently advertising.
+    public var isAdvertising: Bool {
+        bonjourService.isAdvertising
+    }
+
     // MARK: - Dependencies
 
     private let bonjourService: any PeerNetwork
@@ -64,8 +80,9 @@ public final class PortalViewModule: SixthSenseModule {
         state = .starting
 
         // Start advertising so that companion apps can discover this Mac.
-        try bonjourService.startAdvertising(name: "PortalView-\(ProcessInfo.processInfo.hostName)",
-                                            port: 5960)
+        let name = "PortalView-\(ProcessInfo.processInfo.hostName)"
+        advertisedName = name
+        try bonjourService.startAdvertising(name: name, port: 5960)
 
         // TODO: Create a CGVirtualDisplay with CoreGraphics private API or
         // ScreenCaptureKit to provide a headless framebuffer that can be
@@ -85,6 +102,7 @@ public final class PortalViewModule: SixthSenseModule {
         messageCancellable?.cancel()
         messageCancellable = nil
         bonjourService.stopAdvertising()
+        advertisedName = nil
         state = .disabled
     }
 

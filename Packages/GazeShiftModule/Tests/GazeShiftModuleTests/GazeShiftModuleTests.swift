@@ -69,3 +69,21 @@ private func makeModule() -> (GazeShiftModule, MockCameraPipeline, MockOverlayPr
     #expect(camera.unsubscribeCalls.contains("gaze-shift"))
     #expect(overlay.removeCalls.contains("gaze-shift"))
 }
+
+// MARK: - Training-view state
+
+@Test @MainActor func gazeShiftStartsWithNoGazePoint() {
+    let (module, _, _, _) = makeModule()
+    #expect(module.latestGazePoint == nil)
+    #expect(module.focusedWindowTitle == nil)
+}
+
+@Test @MainActor func gazeShiftStopResetsGazePoint() async throws {
+    let (module, _, _, _) = makeModule()
+
+    try await module.start()
+    await module.stop()
+
+    #expect(module.latestGazePoint == nil)
+    #expect(module.focusedWindowTitle == nil)
+}

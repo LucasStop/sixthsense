@@ -1,4 +1,5 @@
 import Testing
+import Foundation
 import SixthSenseCore
 import SharedServices
 import SharedServicesMocks
@@ -78,4 +79,35 @@ private func makeModule() -> (AirCursorModule, MockPeerNetwork, MockMouseControl
 
     #expect(network.startBrowsingCalls == 2)
     #expect(network.stopBrowsingCalls == 2)
+}
+
+// MARK: - Training-view state
+
+@Test @MainActor func airCursorStartsWithNoReading() {
+    let (module, _, _) = makeModule()
+    #expect(module.latestReading == nil)
+    #expect(module.tapCount == 0)
+}
+
+@Test @MainActor func airCursorIsConnectedReflectsDiscoveredPeers() {
+    let (module, _, _) = makeModule()
+    #expect(module.isConnected == false)
+    #expect(module.discoveredPeers.isEmpty)
+}
+
+@Test @MainActor func airCursorStopResetsReadingAndTapCount() async throws {
+    let (module, _, _) = makeModule()
+
+    try await module.start()
+    await module.stop()
+
+    #expect(module.latestReading == nil)
+    #expect(module.tapCount == 0)
+}
+
+@Test func airCursorReadingIsEquatable() {
+    let date = Date()
+    let a = AirCursorReading(dx: 1.0, dy: 2.0, tap: false, timestamp: date)
+    let b = AirCursorReading(dx: 1.0, dy: 2.0, tap: false, timestamp: date)
+    #expect(a == b)
 }
