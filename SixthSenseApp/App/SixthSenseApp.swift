@@ -19,5 +19,11 @@ struct SixthSenseApp: App {
         Settings {
             SettingsView(appState: appState)
         }
+
+        // Tutorial window
+        Window("SixthSense Tutorials", id: "tutorials") {
+            OnboardingView()
+        }
+        .defaultSize(width: 800, height: 600)
     }
 }
