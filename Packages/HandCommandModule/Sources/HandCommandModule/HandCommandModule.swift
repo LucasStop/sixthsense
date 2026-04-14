@@ -45,6 +45,12 @@ public final class HandCommandModule: SixthSenseModule {
     /// Sensitivity multiplier for cursor movement (0.1 ... 3.0).
     public var sensitivity: Double = 1.0
 
+    // MARK: - Live Snapshot
+
+    /// The most recent hand-tracking snapshot (21 landmarks + classified gesture).
+    /// Consumed by the training/visualizer view. `nil` when no hand is detected.
+    public private(set) var latestSnapshot: HandLandmarksSnapshot?
+
     // MARK: - Dependencies
 
     private let cameraManager: any CameraPipeline
@@ -106,6 +112,7 @@ public final class HandCommandModule: SixthSenseModule {
                 try handler.perform([self.handPoseRequest])
                 guard let observation = self.handPoseRequest.results?.first else {
                     Task { @MainActor in
+                        self.latestSnapshot = nil
                         self.eventBus.emit(.handTrackingLost)
                     }
                     return
@@ -118,21 +125,34 @@ public final class HandCommandModule: SixthSenseModule {
     }
 
     private func handleHandObservation(_ observation: VNHumanHandPoseObservation) {
-        guard let indexTip = try? observation.recognizedPoint(.indexTip),
-              let thumbTip = try? observation.recognizedPoint(.thumbTip),
-              indexTip.confidence > 0.5, thumbTip.confidence > 0.5 else { return }
+        // Build a full snapshot of every joint Vision reports, at normalized coords.
+        let snapshot = Self.makeSnapshot(from: observation)
+
+        guard let indexTipLandmark = snapshot.landmarks[.indexTip],
+              let thumbTipLandmark = snapshot.landmarks[.thumbTip],
+              indexTipLandmark.isConfident, thumbTipLandmark.isConfident else {
+            Task { @MainActor in self.latestSnapshot = snapshot }
+            return
+        }
+
+        let indexTip = indexTipLandmark.position
+        let thumbTip = thumbTipLandmark.position
 
         // Compute pinch distance for gesture detection
-        let pinchDistance = hypot(indexTip.location.x - thumbTip.location.x,
-                                  indexTip.location.y - thumbTip.location.y)
+        let pinchDistance = hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y)
 
         // Convert normalised Vision coordinates to screen coordinates
-        guard let screen = NSScreen.main else { return }
+        guard let screen = NSScreen.main else {
+            Task { @MainActor in self.latestSnapshot = snapshot }
+            return
+        }
         let screenSize = screen.frame.size
-        let cursorX = indexTip.location.x * screenSize.width * sensitivity
-        let cursorY = (1 - indexTip.location.y) * screenSize.height * sensitivity
+        let cursorX = indexTip.x * screenSize.width * sensitivity
+        let cursorY = (1 - indexTip.y) * screenSize.height * sensitivity
 
-        Task { @MainActor [cursorController, eventBus, cursorX, cursorY, pinchDistance] in
+        Task { @MainActor [cursorController, eventBus, cursorX, cursorY, pinchDistance, snapshot] in
+            self.latestSnapshot = snapshot
+
             cursorController.moveTo(CGPoint(x: cursorX, y: cursorY))
 
             if pinchDistance < 0.05 {
@@ -140,6 +160,63 @@ public final class HandCommandModule: SixthSenseModule {
             }
         }
     }
+
+    // MARK: - Snapshot Construction
+
+    /// Map a Vision observation to the neutral HandLandmarksSnapshot type.
+    /// Extracted as a static method so it can be tested independently of the
+    /// module's live state.
+    static func makeSnapshot(from observation: VNHumanHandPoseObservation) -> HandLandmarksSnapshot {
+        var landmarks: [HandJoint: HandLandmark] = [:]
+
+        for (jointName, coreJoint) in Self.jointMapping {
+            guard let point = try? observation.recognizedPoint(jointName) else { continue }
+            let landmark = HandLandmark(
+                joint: coreJoint,
+                position: point.location,
+                confidence: point.confidence
+            )
+            landmarks[coreJoint] = landmark
+        }
+
+        let snapshot = HandLandmarksSnapshot(
+            landmarks: landmarks,
+            gesture: .none
+        )
+        // Re-classify using the pure classifier so the snapshot carries a gesture.
+        let classified = HandGestureClassifier.classify(snapshot)
+        return HandLandmarksSnapshot(
+            landmarks: landmarks,
+            gesture: classified,
+            timestamp: snapshot.timestamp
+        )
+    }
+
+    /// Explicit mapping from Vision's joint names to our Core HandJoint enum.
+    /// Kept here (not in Core) so Core has no Vision dependency.
+    private static let jointMapping: [(VNHumanHandPoseObservation.JointName, HandJoint)] = [
+        (.wrist,       .wrist),
+        (.thumbCMC,    .thumbCMC),
+        (.thumbMP,     .thumbMP),
+        (.thumbIP,     .thumbIP),
+        (.thumbTip,    .thumbTip),
+        (.indexMCP,    .indexMCP),
+        (.indexPIP,    .indexPIP),
+        (.indexDIP,    .indexDIP),
+        (.indexTip,    .indexTip),
+        (.middleMCP,   .middleMCP),
+        (.middlePIP,   .middlePIP),
+        (.middleDIP,   .middleDIP),
+        (.middleTip,   .middleTip),
+        (.ringMCP,     .ringMCP),
+        (.ringPIP,     .ringPIP),
+        (.ringDIP,     .ringDIP),
+        (.ringTip,     .ringTip),
+        (.littleMCP,   .littleMCP),
+        (.littlePIP,   .littlePIP),
+        (.littleDIP,   .littleDIP),
+        (.littleTip,   .littleTip),
+    ]
 
     // MARK: - Settings View
 
