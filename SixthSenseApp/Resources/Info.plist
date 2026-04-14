@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>SixthSense</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.lucasstop.sixthsense</string>
+    <key>CFBundleVersion</key>
+    <string>1.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleExecutable</key>
+    <string>SixthSense</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <key>NSCameraUsageDescription</key>
+    <string>SixthSense uses the camera for hand gesture and gaze tracking.</string>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>SixthSense connects to companion devices on your local network.</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_sixthsense._tcp</string>
+    </array>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>SixthSense uses the microphone for audio visualization in NotchBar.</string>
+</dict>
+</plist>

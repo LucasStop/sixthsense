@@ -74,9 +74,7 @@ struct MenuBarView: View {
 
     private var footer: some View {
         HStack {
-            Button(action: {
-                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-            }) {
+            SettingsLink {
                 Label("Settings", systemImage: "gear")
                     .font(.caption)
             }
