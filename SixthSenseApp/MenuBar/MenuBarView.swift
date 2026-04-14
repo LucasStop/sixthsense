@@ -75,7 +75,7 @@ struct MenuBarView: View {
     // MARK: - Footer
 
     private var footer: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             Button(action: {
                 openWindow(id: "tutorials")
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -83,6 +83,18 @@ struct MenuBarView: View {
                 }
             }) {
                 Label("Tutoriais", systemImage: "book")
+                    .font(.caption)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+
+            Button(action: {
+                openWindow(id: "hand-training")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    NSApplication.shared.activate(ignoringOtherApps: true)
+                }
+            }) {
+                Label("Treinamento", systemImage: "hand.raised.fingers.spread")
                     .font(.caption)
             }
             .buttonStyle(.plain)
