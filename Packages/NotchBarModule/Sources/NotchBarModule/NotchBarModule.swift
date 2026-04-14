@@ -112,7 +112,6 @@ public final class NotchBarModule: SixthSenseModule {
         guard let topInset = screen.notchTopInset else { return nil }
 
         let screenFrame = screen.frame
-        let visibleFrame = screen.visibleFrame
 
         // The notch is centered at the top of the screen.
         let notchWidth: CGFloat = 300

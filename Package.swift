@@ -67,7 +67,8 @@ let package = Package(
                 "GhostDropModule",
                 "NotchBarModule",
             ],
-            path: "SixthSenseApp"
+            path: "SixthSenseApp",
+            exclude: ["Resources/Info.plist"]
         ),
 
         // Tests

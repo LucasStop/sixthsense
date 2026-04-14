@@ -6,6 +6,7 @@ import SixthSenseCore
 /// Main popover content shown when clicking the menu bar icon.
 struct MenuBarView: View {
     let appState: AppState
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         VStack(spacing: 0) {
@@ -74,7 +75,10 @@ struct MenuBarView: View {
 
     private var footer: some View {
         HStack {
-            SettingsLink {
+            Button(action: {
+                NSApplication.shared.activate(ignoringOtherApps: true)
+                openSettings()
+            }) {
                 Label("Settings", systemImage: "gear")
                     .font(.caption)
             }
