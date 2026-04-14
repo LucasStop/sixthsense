@@ -37,3 +37,11 @@ import SharedServices
     module.autoHide = true
     #expect(module.autoHide == true)
 }
+
+// MARK: - Training-view state
+
+@Test @MainActor func notchBarStartsWithoutDetection() {
+    let module = NotchBarModule(overlay: OverlayWindowManager())
+    #expect(module.hasDetectedNotch == false)
+    #expect(module.notchFrame == nil)
+}

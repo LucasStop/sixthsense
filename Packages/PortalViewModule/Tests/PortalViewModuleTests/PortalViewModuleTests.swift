@@ -76,3 +76,36 @@ private func makeModule() -> (PortalViewModule, MockPeerNetwork) {
         // Expected: MockPeerNetworkError.forcedFailure bubbles up
     }
 }
+
+// MARK: - Training-view state
+
+@Test @MainActor func portalViewStartsWithNoAdvertisedName() {
+    let (module, _) = makeModule()
+    #expect(module.advertisedName == nil)
+    #expect(module.isAdvertising == false)
+}
+
+@Test @MainActor func portalViewStartSetsAdvertisedName() async throws {
+    let (module, _) = makeModule()
+
+    try await module.start()
+
+    #expect(module.advertisedName != nil)
+    #expect(module.advertisedName?.hasPrefix("PortalView-") == true)
+    #expect(module.isAdvertising == true)
+}
+
+@Test @MainActor func portalViewStopClearsAdvertisedName() async throws {
+    let (module, _) = makeModule()
+
+    try await module.start()
+    await module.stop()
+
+    #expect(module.advertisedName == nil)
+    #expect(module.isAdvertising == false)
+}
+
+@Test @MainActor func portalViewDiscoveredPeersExposedForTraining() {
+    let (module, _) = makeModule()
+    #expect(module.discoveredPeers.isEmpty)
+}

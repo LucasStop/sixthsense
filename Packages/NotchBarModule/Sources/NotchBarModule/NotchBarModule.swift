@@ -40,6 +40,14 @@ public final class NotchBarModule: SixthSenseModule {
     /// Whether the notch bar should auto-hide when no content is displayed.
     public var autoHide: Bool = false
 
+    // MARK: - Live State
+
+    /// Whether a notch was detected on the built-in display.
+    public private(set) var hasDetectedNotch: Bool = false
+
+    /// Frame of the notch overlay last rendered, for the training view preview.
+    public private(set) var notchFrame: NSRect?
+
     // MARK: - Settings View
 
     public var settingsView: some View {
@@ -73,21 +81,27 @@ public final class NotchBarModule: SixthSenseModule {
     public func start() async throws {
         state = .starting
 
-        guard let notchFrame = Self.detectNotchFrame() else {
+        if let detected = Self.detectNotchFrame() {
+            hasDetectedNotch = true
+            notchFrame = detected
+            createOverlay(frame: detected)
+        } else {
             // No notch detected (external display or pre-notch Mac); use a
             // sensible default at the top-center of the screen.
-            state = .running
-            createOverlay(frame: Self.fallbackFrame())
-            return
+            hasDetectedNotch = false
+            let fallback = Self.fallbackFrame()
+            notchFrame = fallback
+            createOverlay(frame: fallback)
         }
 
-        createOverlay(frame: notchFrame)
         state = .running
     }
 
     public func stop() async {
         state = .stopping
         overlayManager.removeOverlay(id: Self.descriptor.id)
+        hasDetectedNotch = false
+        notchFrame = nil
         state = .disabled
     }
 

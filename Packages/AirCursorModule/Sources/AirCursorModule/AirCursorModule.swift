@@ -39,6 +39,25 @@ public final class AirCursorModule: SixthSenseModule {
     /// Gyro-to-cursor sensitivity multiplier.
     public var gyroSensitivity: Double = 1.0
 
+    // MARK: - Live State
+
+    /// Latest gyro reading received from the paired iPhone. Consumed by the
+    /// training view so the user can see their phone movement in real time.
+    public private(set) var latestReading: AirCursorReading?
+
+    /// Running count of taps received since the module was last started.
+    public private(set) var tapCount: Int = 0
+
+    /// Whether at least one peer is connected.
+    public var isConnected: Bool {
+        !discoveredPeers.isEmpty
+    }
+
+    /// Exposed for training views that want to render peer list.
+    public var discoveredPeers: [DiscoveredPeer] {
+        bonjourService.discoveredPeers
+    }
+
     // MARK: - Dependencies
 
     private let bonjourService: any PeerNetwork
@@ -77,6 +96,8 @@ public final class AirCursorModule: SixthSenseModule {
         messageCancellable?.cancel()
         messageCancellable = nil
         bonjourService.stopBrowsing()
+        latestReading = nil
+        tapCount = 0
         state = .disabled
     }
 
@@ -88,9 +109,18 @@ public final class AirCursorModule: SixthSenseModule {
 
         let dx = CGFloat(payload.dx) * gyroSensitivity
         let dy = CGFloat(payload.dy) * gyroSensitivity
+
+        latestReading = AirCursorReading(
+            dx: payload.dx,
+            dy: payload.dy,
+            tap: payload.tap,
+            timestamp: Date()
+        )
+
         cursorController.moveBy(dx: dx, dy: dy)
 
         if payload.tap {
+            tapCount += 1
             let pos = cursorController.currentPosition
             cursorController.leftClick(at: pos)
         }
@@ -134,4 +164,21 @@ private struct GyroPayload: Decodable {
     let dx: Double
     let dy: Double
     let tap: Bool
+}
+
+// MARK: - Air Cursor Reading
+
+/// Public snapshot of the last gyro reading, for the training view.
+public struct AirCursorReading: Sendable, Equatable {
+    public let dx: Double
+    public let dy: Double
+    public let tap: Bool
+    public let timestamp: Date
+
+    public init(dx: Double, dy: Double, tap: Bool, timestamp: Date) {
+        self.dx = dx
+        self.dy = dy
+        self.tap = tap
+        self.timestamp = timestamp
+    }
 }

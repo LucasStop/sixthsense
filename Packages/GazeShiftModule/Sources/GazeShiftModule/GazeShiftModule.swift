@@ -45,6 +45,16 @@ public final class GazeShiftModule: SixthSenseModule {
     /// How aggressively unfocused windows are dimmed (0 = off, 1 = fully opaque).
     public var dimIntensity: Double = 0.4
 
+    // MARK: - Live State
+
+    /// The most recent estimated gaze point in screen coordinates.
+    /// Consumed by the training view to show where the system thinks the
+    /// user is looking. `nil` when no face is detected.
+    public private(set) var latestGazePoint: CGPoint?
+
+    /// Title of the window currently under the gaze point, if any.
+    public private(set) var focusedWindowTitle: String?
+
     // MARK: - Dependencies
 
     private let cameraManager: any CameraPipeline
@@ -82,6 +92,8 @@ public final class GazeShiftModule: SixthSenseModule {
         state = .stopping
         cameraManager.unsubscribe(id: Self.descriptor.id)
         overlayManager.removeOverlay(id: Self.descriptor.id)
+        latestGazePoint = nil
+        focusedWindowTitle = nil
         state = .disabled
     }
 
@@ -123,10 +135,14 @@ public final class GazeShiftModule: SixthSenseModule {
 
         let gazePoint = CGPoint(x: gazeX, y: gazeY)
 
-        Task { @MainActor [accessibilityService, gazePoint] in
+        Task { @MainActor [weak self, accessibilityService, gazePoint] in
+            self?.latestGazePoint = gazePoint
             // Focus the window under the estimated gaze point
             if let targetWindow = accessibilityService.windowAtPoint(gazePoint) {
+                self?.focusedWindowTitle = targetWindow.title.isEmpty ? targetWindow.appName : targetWindow.title
                 accessibilityService.focusWindow(targetWindow)
+            } else {
+                self?.focusedWindowTitle = nil
             }
         }
     }

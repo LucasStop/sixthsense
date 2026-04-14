@@ -56,7 +56,9 @@ struct HandTrainingView: View {
 
     @ViewBuilder
     private var preview: some View {
-        let snapshot = handModule.latestSnapshot
+        let left  = handModule.latestLeftSnapshot
+        let right = handModule.latestRightSnapshot
+        let anyHand = left ?? right
 
         ZStack {
             if showCameraFeed, let session = cameraSession() {
@@ -76,14 +78,22 @@ struct HandTrainingView: View {
                 )
             }
 
-            HandSkeletonCanvas(snapshot: snapshot)
+            // Right hand in accent color
+            if let right {
+                HandSkeletonCanvas(snapshot: right)
+            }
+            // Left hand in a secondary color (drawn on top)
+            if let left {
+                HandSkeletonCanvas(snapshot: left)
+                    .opacity(0.95)
+            }
 
-            if snapshot == nil {
+            if anyHand == nil {
                 statusOverlay(
                     icon: "hand.raised.slash",
                     title: "Nenhuma mão detectada",
                     subtitle: handModule.state == .running
-                        ? "Mostre sua mão para a câmera."
+                        ? "Mostre uma ou as duas mãos para a câmera."
                         : "Ative o HandCommand para começar a detectar."
                 )
             }
@@ -97,32 +107,46 @@ struct HandTrainingView: View {
     }
 
     private var footer: some View {
-        let gesture = handModule.latestSnapshot?.gesture ?? .none
+        let rightGesture = handModule.latestRightSnapshot?.gesture ?? .none
+        let leftGesture  = handModule.latestLeftSnapshot?.gesture ?? .none
 
-        return HStack(spacing: 16) {
+        return VStack(spacing: 12) {
+            HStack(spacing: 12) {
+                handCard(title: "Mão Direita — Cursor", gesture: rightGesture, tint: .cyan)
+                handCard(title: "Mão Esquerda — Atalhos", gesture: leftGesture, tint: .pink)
+            }
+
+            gestureLegend
+                .frame(maxWidth: .infinity)
+                .padding(10)
+                .background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
+        }
+    }
+
+    private func handCard(title: String, gesture: DetectedHandGesture, tint: Color) -> some View {
+        HStack(spacing: 12) {
             Image(systemName: gesture.systemImage)
-                .font(.largeTitle)
-                .foregroundStyle(gesture == .none ? .white.opacity(0.5) : .accentColor)
-                .frame(width: 56, height: 56)
-                .background(.white.opacity(0.08), in: Circle())
+                .font(.title2)
+                .foregroundStyle(gesture == .none ? .white.opacity(0.4) : tint)
+                .frame(width: 40, height: 40)
+                .background(.white.opacity(0.07), in: Circle())
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Gesto atual")
-                    .font(.caption)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.caption2)
                     .foregroundStyle(.white.opacity(0.5))
                 Text(gesture.label)
-                    .font(.title3.weight(.semibold))
+                    .font(.callout.weight(.semibold))
                     .foregroundStyle(.white)
                     .contentTransition(.numericText())
                     .animation(.easeInOut(duration: 0.2), value: gesture)
             }
 
-            Spacer()
-
-            gestureLegend
+            Spacer(minLength: 0)
         }
-        .padding(12)
-        .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
+        .padding(10)
+        .frame(maxWidth: .infinity)
+        .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
     }
 
     private var gestureLegend: some View {

@@ -41,6 +41,20 @@ public final class GhostDropModule: SixthSenseModule {
         ]
     }
 
+    // MARK: - Live State
+
+    /// Short preview of the text currently in the pasteboard — used by the
+    /// training view to show what would be sent on the next throw gesture.
+    public private(set) var clipboardPreview: String?
+
+    /// History of recent transfers (most recent first, up to 10 items).
+    public private(set) var recentTransfers: [GhostDropTransfer] = []
+
+    /// Discovered peers exposed for the training view.
+    public var discoveredPeers: [DiscoveredPeer] {
+        bonjourService.discoveredPeers
+    }
+
     // MARK: - Dependencies
 
     private let cameraManager: any CameraPipeline
@@ -118,7 +132,23 @@ public final class GhostDropModule: SixthSenseModule {
         }
 
         bonjourService.stopBrowsing()
+        clipboardPreview = nil
+        recentTransfers = []
         state = .disabled
+    }
+
+    // MARK: - Training-view helpers
+
+    /// Manually refresh the clipboard preview. The training view calls this
+    /// periodically so the user can see what would be sent without depending
+    /// on a pasteboard change notification.
+    public func refreshClipboardPreview() {
+        let pasteboard = NSPasteboard.general
+        if let text = pasteboard.string(forType: .string), !text.isEmpty {
+            clipboardPreview = String(text.prefix(120))
+        } else {
+            clipboardPreview = nil
+        }
     }
 
     // MARK: - Hand Tracking (Fallback)
@@ -172,6 +202,14 @@ public final class GhostDropModule: SixthSenseModule {
         guard let peer = bonjourService.discoveredPeers.first else { return }
         bonjourService.send(data: data, to: peer.name)
 
+        let preview = String((pasteboard.string(forType: .string) ?? "").prefix(120))
+        recordTransfer(GhostDropTransfer(
+            direction: .sent,
+            peerName: peer.name,
+            preview: preview,
+            timestamp: Date()
+        ))
+
         eventBus.emit(.clipboardContentCaptured(type: .text))
 
         _ = direction // Directional targeting for multi-device setups (future work).
@@ -185,7 +223,22 @@ public final class GhostDropModule: SixthSenseModule {
         pasteboard.clearContents()
         pasteboard.setData(message.data, forType: .string)
 
+        let preview = String((String(data: message.data, encoding: .utf8) ?? "").prefix(120))
+        recordTransfer(GhostDropTransfer(
+            direction: .received,
+            peerName: message.peerId,
+            preview: preview,
+            timestamp: Date()
+        ))
+
         eventBus.emit(.clipboardTransferCompleted(deviceId: message.peerId))
+    }
+
+    private func recordTransfer(_ transfer: GhostDropTransfer) {
+        recentTransfers.insert(transfer, at: 0)
+        if recentTransfers.count > 10 {
+            recentTransfers.removeLast(recentTransfers.count - 10)
+        }
     }
 
     // MARK: - Settings View
@@ -207,5 +260,43 @@ public final class GhostDropModule: SixthSenseModule {
                 }
             }
         }
+    }
+}
+
+// MARK: - Transfer Record
+
+/// Public record of a completed transfer, shown in the training history.
+public struct GhostDropTransfer: Sendable, Identifiable, Equatable {
+    public let id: UUID
+    public let direction: Direction
+    public let peerName: String
+    public let preview: String
+    public let timestamp: Date
+
+    public enum Direction: String, Sendable {
+        case sent
+        case received
+
+        public var label: String {
+            switch self {
+            case .sent:     return "Enviado"
+            case .received: return "Recebido"
+            }
+        }
+
+        public var systemImage: String {
+            switch self {
+            case .sent:     return "arrow.up.right"
+            case .received: return "arrow.down.left"
+            }
+        }
+    }
+
+    public init(direction: Direction, peerName: String, preview: String, timestamp: Date) {
+        self.id = UUID()
+        self.direction = direction
+        self.peerName = peerName
+        self.preview = preview
+        self.timestamp = timestamp
     }
 }

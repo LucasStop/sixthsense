@@ -89,7 +89,7 @@ struct MenuBarView: View {
             .foregroundStyle(.secondary)
 
             Button(action: {
-                openWindow(id: "hand-training")
+                openWindow(id: "training-center")
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     NSApplication.shared.activate(ignoringOtherApps: true)
                 }
