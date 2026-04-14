@@ -200,18 +200,21 @@ public final class FaceRecognitionManager: FaceGate {
     // MARK: - Guided enrollment flow
 
     /// Max angular distance (in degrees) the current pose can be from the
-    /// target before we accept it. Around 7° feels "locked on" without
-    /// being too loose.
-    public var enrollmentHitRadius: Double = 7.0
+    /// target before we accept it. 9° is generous enough that the user
+    /// doesn't have to land exactly on the target, while still tight
+    /// enough that the captured embeddings cover meaningful angles.
+    public var enrollmentHitRadius: Double = 9.0
 
     /// Minimum face capture quality accepted for enrollment, 0-1.
-    /// Vision tends to score a well-lit frontal face around 0.7-0.9.
-    public var enrollmentMinimumQuality: Float = 0.5
+    /// Vision scores typically range 0.3-0.9 depending on lighting and
+    /// pose; 0.35 accepts anything usable and filters out motion blur
+    /// or strong side-lighting.
+    public var enrollmentMinimumQuality: Float = 0.35
 
     /// Minimum hold duration in seconds after hitting a target before we
-    /// commit the feature print. Prevents counting a drive-by through a
-    /// target as a capture.
-    public var enrollmentHoldDuration: TimeInterval = 0.15
+    /// commit the feature print. 100ms prevents drive-by captures but
+    /// still feels snappy.
+    public var enrollmentHoldDuration: TimeInterval = 0.10
 
     /// Start a guided enrollment session with the default 9-point ring.
     /// Replaces the old linear beginEnrollment.

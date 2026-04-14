@@ -17,6 +17,8 @@ struct FaceEnrollmentView: View {
 
     @State private var phase: Phase = .introducing
     @State private var choice: Choice? = nil
+    @State private var lastSeenPose: FaceAngle?
+    @State private var faceLostSince: Date?
 
     // MARK: - Phases
 
@@ -194,18 +196,37 @@ struct FaceEnrollmentView: View {
                     )
                     .frame(width: 300, height: 300)
 
-                // Segmented ring of targets
+                // Segmented ring of targets — sits on the same 300pt
+                // square as the pose cursor so `normalizedPosition` maps
+                // the same angles to the same pixels.
                 EnrollmentRing(
                     targets: faceRecognition.enrollmentTargets,
                     completed: faceRecognition.enrollmentCompletedIds,
                     currentIndex: faceRecognition.enrollmentCurrentTargetIndex
                 )
-                .frame(width: 340, height: 340)
+                .frame(width: 300, height: 300)
 
-                // Live pose cursor (indicator of current face angle)
-                if let pose = faceRecognition.enrollmentCurrentPose {
-                    PoseCursor(pose: pose)
+                // Live pose cursor: shown at full opacity when Vision is
+                // currently seeing the face, and faded at the LAST known
+                // position when the face was briefly lost — this keeps
+                // the user oriented instead of making the cursor vanish.
+                if let pose = effectiveCursorPose {
+                    PoseCursor(pose: pose, opacity: isFaceVisible ? 1.0 : 0.35)
                         .frame(width: 300, height: 300)
+                }
+
+                // Center "face lost" banner when Vision has been blind
+                // for more than half a second.
+                if showFaceLostBanner {
+                    faceLostBanner
+                }
+            }
+            .onChange(of: faceRecognition.enrollmentCurrentPose) { _, newPose in
+                if let newPose {
+                    lastSeenPose = newPose
+                    faceLostSince = nil
+                } else if faceLostSince == nil {
+                    faceLostSince = Date()
                 }
             }
 
@@ -213,6 +234,45 @@ struct FaceEnrollmentView: View {
 
             qualityIndicator
         }
+    }
+
+    /// Pose used to render the cursor — prefers the live value, but
+    /// falls back to the last seen value so the cursor fades instead
+    /// of snapping to nothing.
+    private var effectiveCursorPose: FaceAngle? {
+        faceRecognition.enrollmentCurrentPose ?? lastSeenPose
+    }
+
+    /// Whether Vision is currently producing a pose reading.
+    private var isFaceVisible: Bool {
+        faceRecognition.enrollmentCurrentPose != nil
+    }
+
+    /// The banner shows after ~500ms without a pose, so brief glitches
+    /// don't flash a warning.
+    private var showFaceLostBanner: Bool {
+        guard let lost = faceLostSince else { return false }
+        return Date().timeIntervalSince(lost) >= 0.5
+    }
+
+    private var faceLostBanner: some View {
+        VStack(spacing: 6) {
+            Image(systemName: "eye.trianglebadge.exclamationmark")
+                .font(.title2)
+                .foregroundStyle(.orange)
+            Text("Não consigo ver seu rosto")
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(.white)
+            Text("Volte devagar para o centro")
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.75))
+        }
+        .padding(12)
+        .background(.black.opacity(0.75), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(.orange.opacity(0.5), lineWidth: 1)
+        )
     }
 
     private var instructionCard: some View {
@@ -470,51 +530,40 @@ struct FaceEnrollmentView: View {
 
 // MARK: - Enrollment Ring
 
-/// The circular ring of target segments drawn around the camera preview.
-/// Each segment is an arc that represents one EnrollmentTarget. Completed
-/// targets fill solid green. The "current" target pulses in the accent color.
+/// Draws the guided-enrollment targets as dots positioned by the same
+/// `normalizedPosition(maxDegrees:)` math that drives the pose cursor —
+/// this guarantees the cursor and the targets share one coordinate system,
+/// so "cursor on top of the target" really means "your face is at that
+/// angle". Completed targets flip to a green checkmark badge so they're
+/// visually distinct from the live pose cursor underneath.
 private struct EnrollmentRing: View {
     let targets: [EnrollmentTarget]
     let completed: Set<Int>
     let currentIndex: Int
+
+    /// Max degrees represented by the full radius of the ring. Must match
+    /// the value used by PoseCursor so both sit in the same coordinate
+    /// space. 14° gives a small margin around the default ±12° targets.
+    private let maxDegrees: Double = 14.0
 
     @State private var pulse: Bool = false
 
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                // Background ring (always visible, faint)
+                // Faint background ring so the empty area is still visible.
                 Circle()
-                    .stroke(.white.opacity(0.1), lineWidth: 10)
-                    .padding(10)
+                    .stroke(.white.opacity(0.08), lineWidth: 2)
+                    .padding(6)
 
-                // Target dots arranged in a circle
                 ForEach(Array(targets.enumerated()), id: \.element.id) { index, target in
-                    let position = ringPosition(
-                        for: index,
-                        count: targets.count,
-                        in: geo.size
-                    )
+                    let position = normalizedPoint(for: target.angle, in: geo.size)
                     let isDone = completed.contains(target.id)
                     let isCurrent = index == currentIndex && !isDone
 
-                    Circle()
-                        .fill(dotColor(isDone: isDone, isCurrent: isCurrent))
-                        .frame(width: isCurrent ? 22 : 16, height: isCurrent ? 22 : 16)
-                        .overlay(
-                            Circle()
-                                .stroke(.white.opacity(0.4), lineWidth: isCurrent ? 2 : 1)
-                        )
-                        .shadow(
-                            color: dotColor(isDone: isDone, isCurrent: isCurrent).opacity(0.6),
-                            radius: isCurrent ? 10 : 4
-                        )
-                        .scaleEffect(isCurrent && pulse ? 1.15 : 1.0)
+                    targetDot(isDone: isDone, isCurrent: isCurrent)
                         .position(position)
-                        .animation(
-                            .easeInOut(duration: 0.35),
-                            value: isDone
-                        )
+                        .animation(.easeInOut(duration: 0.35), value: isDone)
                 }
             }
             .onAppear {
@@ -525,57 +574,109 @@ private struct EnrollmentRing: View {
         }
     }
 
-    /// Places the target dot around the ring. Index 0 is the center
-    /// (straight ahead), so it sits at the middle; the remaining targets
-    /// distribute evenly around the circle starting from the top.
-    private func ringPosition(for index: Int, count: Int, in size: CGSize) -> CGPoint {
-        let center = CGPoint(x: size.width / 2, y: size.height / 2)
-        if index == 0 {
-            return center
+    @ViewBuilder
+    private func targetDot(isDone: Bool, isCurrent: Bool) -> some View {
+        if isDone {
+            // Done: green checkmark badge so it can't be confused with
+            // the live pose cursor (which is a white crosshair).
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 22, weight: .bold))
+                .foregroundStyle(.green)
+                .background(
+                    Circle()
+                        .fill(.black.opacity(0.5))
+                        .frame(width: 26, height: 26)
+                )
+                .shadow(color: .green.opacity(0.6), radius: 6)
+        } else if isCurrent {
+            // Current: pulsing accent dot with a clear white outline.
+            ZStack {
+                Circle()
+                    .fill(Color.accentColor.opacity(0.4))
+                    .frame(width: 34, height: 34)
+                    .blur(radius: 6)
+                Circle()
+                    .fill(Color.accentColor)
+                    .frame(width: 22, height: 22)
+                Circle()
+                    .stroke(.white, lineWidth: 2)
+                    .frame(width: 22, height: 22)
+            }
+            .scaleEffect(pulse ? 1.15 : 1.0)
+            .shadow(color: .accentColor.opacity(0.7), radius: 8)
+        } else {
+            // Pending: a hollow ring, deliberately subtle.
+            Circle()
+                .stroke(.white.opacity(0.45), lineWidth: 2)
+                .background(Circle().fill(.black.opacity(0.35)))
+                .frame(width: 14, height: 14)
         }
-        let orbitCount = max(1, count - 1)
-        let orbitIndex = index - 1
-        // Start at the top (angle = -π/2) and go clockwise.
-        let angle = (Double(orbitIndex) / Double(orbitCount)) * 2 * .pi - .pi / 2
-        let radius = min(size.width, size.height) / 2 - 16
-        return CGPoint(
-            x: center.x + CGFloat(cos(angle)) * radius,
-            y: center.y + CGFloat(sin(angle)) * radius
-        )
     }
 
-    private func dotColor(isDone: Bool, isCurrent: Bool) -> Color {
-        if isDone { return .green }
-        if isCurrent { return .accentColor }
-        return .white.opacity(0.35)
+    /// Converts a target angle to a pixel coordinate using the same math
+    /// as the pose cursor (`normalizedPosition`), so the two always line
+    /// up regardless of how the ring is sized.
+    private func normalizedPoint(for angle: FaceAngle, in size: CGSize) -> CGPoint {
+        let normalized = angle.normalizedPosition(maxDegrees: maxDegrees)
+        return CGPoint(
+            x: CGFloat(normalized.x) * size.width,
+            y: CGFloat(normalized.y) * size.height
+        )
     }
 }
 
 // MARK: - Pose Cursor
 
 /// Live indicator of the user's current face angle, placed inside the
-/// ring at a normalized position derived from yaw/pitch.
+/// ring at a normalized position derived from yaw/pitch. Rendered as a
+/// white reticle (outer ring + inner cross) so it reads as "your cursor"
+/// and never blends in with the green check badges of completed targets.
+/// `opacity` is used to fade the cursor when the face is briefly lost
+/// instead of removing it entirely — the user still sees where it WAS,
+/// which helps them recover the pose.
 private struct PoseCursor: View {
     let pose: FaceAngle
+    var opacity: Double = 1.0
+
+    /// Must match `EnrollmentRing.maxDegrees` so the cursor and the
+    /// targets share the same coordinate system.
+    private let maxDegrees: Double = 14.0
 
     var body: some View {
         GeometryReader { geo in
-            let normalized = pose.normalizedPosition()
+            let normalized = pose.normalizedPosition(maxDegrees: maxDegrees)
             let x = CGFloat(normalized.x) * geo.size.width
             let y = CGFloat(normalized.y) * geo.size.height
 
             ZStack {
+                // Soft halo for visibility over any camera background.
                 Circle()
-                    .fill(.cyan.opacity(0.3))
-                    .frame(width: 26, height: 26)
-                    .blur(radius: 4)
+                    .fill(.white.opacity(0.25))
+                    .frame(width: 46, height: 46)
+                    .blur(radius: 8)
+
+                // Outer reticle ring.
                 Circle()
-                    .fill(.cyan)
-                    .frame(width: 12, height: 12)
-                    .shadow(color: .cyan, radius: 6)
+                    .strokeBorder(.white, lineWidth: 3)
+                    .frame(width: 32, height: 32)
+                    .shadow(color: .black.opacity(0.5), radius: 3)
+
+                // Inner cross — purely decorative but makes the cursor
+                // look like a viewfinder, not "another target dot".
+                Path { path in
+                    path.move(to: CGPoint(x: -6, y: 0))
+                    path.addLine(to: CGPoint(x: 6, y: 0))
+                    path.move(to: CGPoint(x: 0, y: -6))
+                    path.addLine(to: CGPoint(x: 0, y: 6))
+                }
+                .offset(x: 16, y: 16)
+                .stroke(.white, lineWidth: 2)
+                .frame(width: 32, height: 32)
             }
+            .opacity(opacity)
             .position(x: x, y: y)
             .animation(.easeOut(duration: 0.12), value: pose)
+            .animation(.easeInOut(duration: 0.2), value: opacity)
         }
     }
 }
