@@ -7,6 +7,7 @@ import SixthSenseCore
 struct MenuBarView: View {
     let appState: AppState
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(spacing: 0) {
@@ -74,7 +75,17 @@ struct MenuBarView: View {
     // MARK: - Footer
 
     private var footer: some View {
-        HStack {
+        HStack(spacing: 12) {
+            Button(action: {
+                NSApplication.shared.activate(ignoringOtherApps: true)
+                openWindow(id: "tutorials")
+            }) {
+                Label("Tutorials", systemImage: "book")
+                    .font(.caption)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+
             Button(action: {
                 NSApplication.shared.activate(ignoringOtherApps: true)
                 openSettings()
