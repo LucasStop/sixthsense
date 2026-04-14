@@ -5,12 +5,11 @@ import SixthSenseCore
 
 // MARK: - Face Enrollment View
 
-/// Modal view that captures the user's face and lets them pick whether
-/// only they should be allowed to drive gestures, or any face counts.
-/// All the heavy lifting (camera subscription, Vision feature prints,
-/// progress tracking) lives in FaceRecognitionManager — this view is a
-/// thin front-end that observes `enrollmentProgress` / `enrollmentFaceBox`
-/// and calls `beginEnrollment` / `enroll`.
+/// Face ID-style guided enrollment. The user moves their head slowly in
+/// a circle while the view shows a ring of target segments around their
+/// face. As each target is captured, its segment fills green. Live pose
+/// feedback moves a dot inside the ring so the user can see exactly
+/// which angle they're aimed at.
 struct FaceEnrollmentView: View {
     let faceRecognition: FaceRecognitionManager
     let cameraSession: () -> AVCaptureSession?
@@ -18,8 +17,6 @@ struct FaceEnrollmentView: View {
 
     @State private var phase: Phase = .introducing
     @State private var choice: Choice? = nil
-
-    private let targetCaptures = 10
 
     // MARK: - Phases
 
@@ -33,13 +30,6 @@ struct FaceEnrollmentView: View {
     private enum Choice: String, Hashable {
         case onlyMe
         case anyone
-
-        var mode: FaceLockMode {
-            switch self {
-            case .onlyMe: return .enrolledFace
-            case .anyone: return .anyFace
-            }
-        }
     }
 
     // MARK: - Body
@@ -64,13 +54,8 @@ struct FaceEnrollmentView: View {
         }
         .frame(width: 620)
         .background(Color(nsColor: .windowBackgroundColor))
-        .onAppear {
-            // Capturing phase is driven by the manager; we watch its
-            // progress via observation in the view body.
-        }
-        .onChange(of: faceRecognition.enrollmentProgress) { _, newValue in
-            if phase == .capturing && newValue >= targetCaptures {
-                // Finished — move the user to the choice phase.
+        .onChange(of: faceRecognition.isEnrollmentComplete) { _, complete in
+            if phase == .capturing && complete {
                 phase = .choosing
             }
         }
@@ -105,7 +90,7 @@ struct FaceEnrollmentView: View {
     private var title: String {
         switch phase {
         case .introducing: return "Reconhecimento Facial"
-        case .capturing:   return "Cadastrando rosto..."
+        case .capturing:   return "Mova a cabeça em círculo"
         case .choosing:    return "Quem pode usar os gestos?"
         case .done:        return "Tudo pronto"
         }
@@ -114,11 +99,11 @@ struct FaceEnrollmentView: View {
     private var subtitle: String {
         switch phase {
         case .introducing:
-            return "Você pode configurar o SixthSense para funcionar apenas quando uma pessoa específica estiver olhando para a tela."
+            return "Vamos cadastrar seu rosto em diferentes ângulos. É parecido com o Face ID do iPhone."
         case .capturing:
-            return "Olhe para a câmera. Vamos capturar \(targetCaptures) frames para que o rosto seja reconhecido depois."
+            return "Olhe para a câmera e gire lentamente a cabeça para completar o círculo."
         case .choosing:
-            return "Rosto capturado com sucesso. Escolha quem vai poder controlar o Mac com gestos."
+            return "Rosto cadastrado com sucesso. Escolha quem vai poder controlar o Mac com gestos."
         case .done:
             return "Preferências salvas. Você pode mudar isso nas Configurações a qualquer momento."
         }
@@ -140,25 +125,25 @@ struct FaceEnrollmentView: View {
 
     private var introductionContent: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("O SixthSense pode:")
+            Text("Como o cadastro funciona:")
                 .font(.callout.weight(.semibold))
 
             bullet(
-                icon: "eye.fill",
-                title: "Funcionar só quando você estiver olhando para a tela",
-                description: "Os gestos pausam automaticamente se você desvia o olhar — evita cliques acidentais."
+                icon: "face.smiling",
+                title: "Comece olhando reto para a câmera",
+                description: "O ponto central é o primeiro alvo. Os outros 8 ficam em volta dele em círculo."
             )
 
             bullet(
-                icon: "person.crop.circle.badge.checkmark",
-                title: "Reconhecer apenas você como usuário",
-                description: "O rosto é guardado localmente, nunca sai do seu Mac, e só você consegue disparar gestos."
+                icon: "arrow.turn.up.right",
+                title: "Mova a cabeça lentamente em círculo",
+                description: "Aponte para cada segmento do anel. Quando estiver alinhado e o rosto estiver nítido, o segmento fica verde automaticamente."
             )
 
             bullet(
-                icon: "hand.raised.slash",
-                title: "Ou você pode pular e deixar qualquer pessoa usar",
-                description: "Clique em 'Pular' se não quiser reconhecimento facial agora. Dá para ativar depois em Configurações."
+                icon: "checkmark.shield.fill",
+                title: "Tudo roda localmente",
+                description: "O rosto é guardado no seu Mac como um vetor de features, nunca sai do dispositivo e nenhuma foto é salva."
             )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -185,40 +170,107 @@ struct FaceEnrollmentView: View {
     // MARK: - Capturing
 
     private var capturingContent: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 18) {
+            // Circular preview + ring
             ZStack {
+                // Background camera feed clipped to a circle
                 CameraPreviewView(session: cameraSession())
-                    .frame(height: 280)
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .frame(width: 300, height: 300)
+                    .clipShape(Circle())
                     .overlay(
-                        RoundedRectangle(cornerRadius: 14)
-                            .stroke(.white.opacity(0.2), lineWidth: 1)
+                        Circle()
+                            .stroke(Color.white.opacity(0.15), lineWidth: 1)
                     )
 
-                if let box = faceRecognition.enrollmentFaceBox {
-                    FaceBoxOverlay(box: box)
-                }
+                // Dim overlay for contrast
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [.clear, .black.opacity(0.25)],
+                            center: .center,
+                            startRadius: 110,
+                            endRadius: 160
+                        )
+                    )
+                    .frame(width: 300, height: 300)
 
-                if faceRecognition.enrollmentFaceBox == nil {
-                    Text("Procurando rosto...")
-                        .font(.callout)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(.black.opacity(0.6), in: Capsule())
-                        .foregroundStyle(.white)
+                // Segmented ring of targets
+                EnrollmentRing(
+                    targets: faceRecognition.enrollmentTargets,
+                    completed: faceRecognition.enrollmentCompletedIds,
+                    currentIndex: faceRecognition.enrollmentCurrentTargetIndex
+                )
+                .frame(width: 340, height: 340)
+
+                // Live pose cursor (indicator of current face angle)
+                if let pose = faceRecognition.enrollmentCurrentPose {
+                    PoseCursor(pose: pose)
+                        .frame(width: 300, height: 300)
                 }
             }
 
-            ProgressView(
-                value: Double(faceRecognition.enrollmentProgress),
-                total: Double(targetCaptures)
-            )
-            .progressViewStyle(.linear)
-            .tint(Color.accentColor)
+            instructionCard
 
-            Text("\(faceRecognition.enrollmentProgress) de \(targetCaptures) frames capturados")
+            qualityIndicator
+        }
+    }
+
+    private var instructionCard: some View {
+        let current = faceRecognition.enrollmentCurrentTarget
+        let label = current?.label ?? "Prepare-se..."
+        let icon = current?.systemImage ?? "face.dashed"
+
+        return HStack(spacing: 14) {
+            Image(systemName: icon)
+                .font(.title2)
+                .foregroundStyle(.tint)
+                .frame(width: 42, height: 42)
+                .background(Color.accentColor.opacity(0.15), in: Circle())
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(.callout.weight(.semibold))
+                Text("\(faceRecognition.enrollmentProgress) de \(faceRecognition.enrollmentTotal) ângulos capturados")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+        }
+        .padding(12)
+        .background(.tint.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var qualityIndicator: some View {
+        let quality = faceRecognition.enrollmentQuality
+        let visible = faceRecognition.enrollmentCurrentPose != nil
+        return HStack(spacing: 8) {
+            Image(systemName: visible ? qualityIcon(quality) : "face.dashed")
+                .font(.caption)
+                .foregroundStyle(visible ? qualityColor(quality) : .secondary)
+            Text(visible ? qualityText(quality) : "Procurando rosto...")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            Spacer()
+        }
+    }
+
+    private func qualityIcon(_ q: Float) -> String {
+        q < 0.4 ? "exclamationmark.triangle" :
+        q < 0.6 ? "lightbulb" : "sparkles"
+    }
+
+    private func qualityColor(_ q: Float) -> Color {
+        q < 0.4 ? .orange : q < 0.6 ? .yellow : .green
+    }
+
+    private func qualityText(_ q: Float) -> String {
+        if q < 0.4 {
+            return "Qualidade baixa — melhore a iluminação ou aproxime-se"
+        } else if q < 0.6 {
+            return "Qualidade razoável — tente olhar direto para a câmera"
+        } else {
+            return "Qualidade ótima"
         }
     }
 
@@ -316,7 +368,7 @@ struct FaceEnrollmentView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }
-        .frame(maxWidth: .infinity, minHeight: 200)
+        .frame(maxWidth: .infinity, minHeight: 220)
     }
 
     // MARK: - Footer
@@ -350,7 +402,7 @@ struct FaceEnrollmentView: View {
         switch phase {
         case .introducing:
             Button {
-                faceRecognition.beginEnrollment(target: targetCaptures)
+                faceRecognition.beginGuidedEnrollment()
                 phase = .capturing
             } label: {
                 Text("Começar cadastro")
@@ -360,8 +412,6 @@ struct FaceEnrollmentView: View {
             .controlSize(.large)
 
         case .capturing:
-            // Primary action is disabled until the manager finishes; the
-            // onChange handler above advances phase automatically.
             Button {
                 phase = .choosing
             } label: {
@@ -370,7 +420,7 @@ struct FaceEnrollmentView: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            .disabled(faceRecognition.enrollmentProgress < targetCaptures)
+            .disabled(!faceRecognition.isEnrollmentComplete)
 
         case .choosing:
             Button {
@@ -408,9 +458,6 @@ struct FaceEnrollmentView: View {
             case .onlyMe:
                 try faceRecognition.enroll(embeddings: embeddings, activateMode: true)
             case .anyone:
-                // Não guardamos os embeddings quando o usuário escolhe
-                // "qualquer pessoa" — o modo anyFace só precisa de
-                // detecção facial + olhar para a tela.
                 faceRecognition.setLockMode(.anyFace)
             }
             phase = .done
@@ -421,38 +468,114 @@ struct FaceEnrollmentView: View {
     }
 }
 
-// MARK: - Face box overlay
+// MARK: - Enrollment Ring
 
-/// Draws a rounded outline around the detected face's bounding box.
-/// Uses the same Vision coords mirroring convention as HandSkeletonCanvas
-/// (image already flipped by .upMirrored, so X goes straight).
-struct FaceBoxOverlay: View {
-    let box: CGRect
+/// The circular ring of target segments drawn around the camera preview.
+/// Each segment is an arc that represents one EnrollmentTarget. Completed
+/// targets fill solid green. The "current" target pulses in the accent color.
+private struct EnrollmentRing: View {
+    let targets: [EnrollmentTarget]
+    let completed: Set<Int>
+    let currentIndex: Int
+
+    @State private var pulse: Bool = false
 
     var body: some View {
         GeometryReader { geo in
-            let rect = screenRect(for: box, in: geo.size)
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(
-                    LinearGradient(
-                        colors: [.cyan, .blue],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 3
-                )
-                .frame(width: rect.width, height: rect.height)
-                .position(x: rect.midX, y: rect.midY)
-                .shadow(color: .cyan.opacity(0.5), radius: 8)
+            ZStack {
+                // Background ring (always visible, faint)
+                Circle()
+                    .stroke(.white.opacity(0.1), lineWidth: 10)
+                    .padding(10)
+
+                // Target dots arranged in a circle
+                ForEach(Array(targets.enumerated()), id: \.element.id) { index, target in
+                    let position = ringPosition(
+                        for: index,
+                        count: targets.count,
+                        in: geo.size
+                    )
+                    let isDone = completed.contains(target.id)
+                    let isCurrent = index == currentIndex && !isDone
+
+                    Circle()
+                        .fill(dotColor(isDone: isDone, isCurrent: isCurrent))
+                        .frame(width: isCurrent ? 22 : 16, height: isCurrent ? 22 : 16)
+                        .overlay(
+                            Circle()
+                                .stroke(.white.opacity(0.4), lineWidth: isCurrent ? 2 : 1)
+                        )
+                        .shadow(
+                            color: dotColor(isDone: isDone, isCurrent: isCurrent).opacity(0.6),
+                            radius: isCurrent ? 10 : 4
+                        )
+                        .scaleEffect(isCurrent && pulse ? 1.15 : 1.0)
+                        .position(position)
+                        .animation(
+                            .easeInOut(duration: 0.35),
+                            value: isDone
+                        )
+                }
+            }
+            .onAppear {
+                withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
+                    pulse = true
+                }
+            }
         }
     }
 
-    private func screenRect(for normalized: CGRect, in size: CGSize) -> CGRect {
-        CGRect(
-            x: normalized.origin.x * size.width,
-            y: (1 - normalized.origin.y - normalized.height) * size.height,
-            width: normalized.width * size.width,
-            height: normalized.height * size.height
+    /// Places the target dot around the ring. Index 0 is the center
+    /// (straight ahead), so it sits at the middle; the remaining targets
+    /// distribute evenly around the circle starting from the top.
+    private func ringPosition(for index: Int, count: Int, in size: CGSize) -> CGPoint {
+        let center = CGPoint(x: size.width / 2, y: size.height / 2)
+        if index == 0 {
+            return center
+        }
+        let orbitCount = max(1, count - 1)
+        let orbitIndex = index - 1
+        // Start at the top (angle = -π/2) and go clockwise.
+        let angle = (Double(orbitIndex) / Double(orbitCount)) * 2 * .pi - .pi / 2
+        let radius = min(size.width, size.height) / 2 - 16
+        return CGPoint(
+            x: center.x + CGFloat(cos(angle)) * radius,
+            y: center.y + CGFloat(sin(angle)) * radius
         )
+    }
+
+    private func dotColor(isDone: Bool, isCurrent: Bool) -> Color {
+        if isDone { return .green }
+        if isCurrent { return .accentColor }
+        return .white.opacity(0.35)
+    }
+}
+
+// MARK: - Pose Cursor
+
+/// Live indicator of the user's current face angle, placed inside the
+/// ring at a normalized position derived from yaw/pitch.
+private struct PoseCursor: View {
+    let pose: FaceAngle
+
+    var body: some View {
+        GeometryReader { geo in
+            let normalized = pose.normalizedPosition()
+            let x = CGFloat(normalized.x) * geo.size.width
+            let y = CGFloat(normalized.y) * geo.size.height
+
+            ZStack {
+                Circle()
+                    .fill(.cyan.opacity(0.3))
+                    .frame(width: 26, height: 26)
+                    .blur(radius: 4)
+                Circle()
+                    .fill(.cyan)
+                    .frame(width: 12, height: 12)
+                    .shadow(color: .cyan, radius: 6)
+            }
+            .position(x: x, y: y)
+            .animation(.easeOut(duration: 0.12), value: pose)
+        }
     }
 }
