@@ -310,21 +310,65 @@ struct HandTrainingView: View {
     }
 
     private var footer: some View {
-        let rightGesture = handModule.latestRightSnapshot?.gesture ?? .none
+        let rightDetected = handModule.latestRightSnapshot != nil
         let leftGesture  = handModule.latestLeftSnapshot?.gesture ?? .none
 
         return VStack(spacing: 12) {
             HStack(spacing: 12) {
-                handCard(title: "Mão Esquerda — Atalhos", gesture: leftGesture, tint: .pink)
-                handCard(title: "Mão Direita — Cursor", gesture: rightGesture, tint: .cyan)
+                handSimpleCard(
+                    title: "Mão Esquerda — Clicar",
+                    description: leftGesture == .pinch ? "Clicando!" : "Faça pinça para clicar",
+                    icon: "hand.pinch",
+                    tint: .pink,
+                    active: leftGesture == .pinch
+                )
+                handSimpleCard(
+                    title: "Mão Direita — Mover",
+                    description: rightDetected ? "Rastreando dedo indicador" : "Mostre a mão para a câmera",
+                    icon: "hand.point.up.left",
+                    tint: .cyan,
+                    active: rightDetected
+                )
             }
 
-            gestureLegend
+            activeGesturesLegend
                 .frame(maxWidth: .infinity)
                 .padding(10)
                 .background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
 
             debugCard
+        }
+    }
+
+    private var activeGesturesLegend: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Gestos ativos")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.55))
+
+            HStack(spacing: 14) {
+                legendItem(icon: "hand.point.up.left", color: .cyan,
+                           label: "Mover cursor", description: "Mão direita aponta com o indicador")
+                legendItem(icon: "hand.pinch", color: .pink,
+                           label: "Clicar", description: "Mão esquerda junta polegar + indicador")
+            }
+        }
+    }
+
+    private func legendItem(icon: String, color: Color, label: String, description: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.callout)
+                .foregroundStyle(color)
+                .frame(width: 24)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(label)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.85))
+                Text(description)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.white.opacity(0.5))
+            }
         }
     }
 
@@ -372,46 +416,51 @@ struct HandTrainingView: View {
         .background(.black.opacity(0.55), in: Capsule())
     }
 
-    private func handCard(title: String, gesture: DetectedHandGesture, tint: Color) -> some View {
+    private func handSimpleCard(
+        title: String,
+        description: String,
+        icon: String,
+        tint: Color,
+        active: Bool
+    ) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: gesture.systemImage)
+            Image(systemName: icon)
                 .font(.title2)
-                .foregroundStyle(gesture == .none ? .white.opacity(0.4) : tint)
+                .foregroundStyle(active ? tint : .white.opacity(0.35))
                 .frame(width: 40, height: 40)
-                .background(.white.opacity(0.07), in: Circle())
+                .background(
+                    Circle()
+                        .fill(active ? tint.opacity(0.15) : .white.opacity(0.05))
+                )
+                .overlay(
+                    Circle()
+                        .stroke(active ? tint.opacity(0.6) : .clear, lineWidth: 1.5)
+                )
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.5))
-                Text(gesture.label)
+                    .foregroundStyle(.white.opacity(0.55))
+                Text(description)
                     .font(.callout.weight(.semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(active ? .white : .white.opacity(0.6))
                     .contentTransition(.numericText())
-                    .animation(.easeInOut(duration: 0.2), value: gesture)
+                    .animation(.easeInOut(duration: 0.2), value: active)
             }
 
             Spacer(minLength: 0)
         }
         .padding(10)
         .frame(maxWidth: .infinity)
-        .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
-    }
-
-    private var gestureLegend: some View {
-        HStack(spacing: 10) {
-            ForEach(DetectedHandGesture.allCases.filter { $0 != .none }, id: \.self) { g in
-                VStack(spacing: 4) {
-                    Image(systemName: g.systemImage)
-                        .font(.callout)
-                        .foregroundStyle(.white.opacity(0.7))
-                    Text(g.label)
-                        .font(.system(size: 9))
-                        .foregroundStyle(.white.opacity(0.5))
-                }
-                .frame(width: 56)
-            }
-        }
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(.white.opacity(0.05))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(active ? tint.opacity(0.4) : .clear, lineWidth: 1)
+        )
+        .animation(.easeInOut(duration: 0.15), value: active)
     }
 
     private func statusOverlay(icon: String, title: String, subtitle: String) -> some View {

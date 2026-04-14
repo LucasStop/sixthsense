@@ -34,206 +34,186 @@ private func reading(
     )
 }
 
-// MARK: - Right hand tests
+// MARK: - Right hand → cursor movement
 
-@Test func rightHandPointingEmitsMoveCursor() {
+@Test func rightHandAlwaysEmitsMoveCursorRegardlessOfGesture() {
     var router = HandActionRouter()
+
+    // Pointing — moves cursor to index tip.
+    let pointing = reading(
+        chirality: .right,
+        gesture: .pointing,
+        landmarks: landmarks(index: CGPoint(x: 0.3, y: 0.4))
+    )
+    let a1 = router.process(left: nil, right: pointing)
+    #expect(a1.contains { if case .moveCursor(let p) = $0 { return p.x == 0.3 && p.y == 0.4 }; return false })
+
+    // .none — still moves cursor because gesture is irrelevant to movement.
+    let free = reading(
+        chirality: .right,
+        gesture: .none,
+        landmarks: landmarks(index: CGPoint(x: 0.7, y: 0.2))
+    )
+    let a2 = router.process(left: nil, right: free)
+    #expect(a2.contains { if case .moveCursor(let p) = $0 { return p.x == 0.7 && p.y == 0.2 }; return false })
+
+    // .openHand — same.
+    let open = reading(
+        chirality: .right,
+        gesture: .openHand,
+        landmarks: landmarks(index: CGPoint(x: 0.5, y: 0.5))
+    )
+    let a3 = router.process(left: nil, right: open)
+    #expect(a3.contains { if case .moveCursor(let p) = $0 { return p.x == 0.5 && p.y == 0.5 }; return false })
+}
+
+@Test func rightHandDoesNotEmitClickOnPinch() {
+    // Clicks only come from the LEFT hand in the simplified routing.
+    var router = HandActionRouter()
+    let pinch = reading(chirality: .right, gesture: .pinch)
+    let actions = router.process(left: nil, right: pinch)
+    #expect(actions.contains { if case .click = $0 { return true }; return false } == false)
+}
+
+@Test func rightHandDoesNotEmitDragOrScroll() {
+    var router = HandActionRouter()
+    let fist = reading(chirality: .right, gesture: .fist)
+    let openHand = reading(chirality: .right, gesture: .openHand)
+
+    let a1 = router.process(left: nil, right: fist)
+    let a2 = router.process(left: nil, right: openHand)
+
+    #expect(a1.contains { if case .dragBegin = $0 { return true }; return false } == false)
+    #expect(a1.contains { if case .scroll = $0 { return true }; return false } == false)
+    #expect(a2.contains { if case .scroll = $0 { return true }; return false } == false)
+}
+
+// MARK: - Left hand → click
+
+@Test func leftPinchTriggersClickAtLastKnownCursorPosition() {
+    var router = HandActionRouter()
+
+    // Right hand points at (0.4, 0.6) — establishes cursor position.
     let right = reading(
         chirality: .right,
         gesture: .pointing,
         landmarks: landmarks(index: CGPoint(x: 0.4, y: 0.6))
     )
+    _ = router.process(left: nil, right: right)
 
-    let actions = router.process(left: nil, right: right)
+    // Left hand pinches — should click at (0.4, 0.6).
+    let left = reading(chirality: .left, gesture: .pinch)
+    let actions = router.process(left: left, right: nil)
 
     #expect(actions.contains { action in
-        if case .moveCursor(let p) = action { return p.x == 0.4 && p.y == 0.6 }
+        if case .click(let p) = action { return p.x == 0.4 && p.y == 0.6 }
         return false
     })
 }
 
-@Test func rightHandPinchEmitsClickOnce() {
-    var router = HandActionRouter()
-    let pinchReading = reading(chirality: .right, gesture: .pinch)
-
-    // First pinch frame → click
-    let first = router.process(left: nil, right: pinchReading)
-    #expect(first.contains { if case .click = $0 { return true }; return false })
-
-    // Sustained pinch should NOT spam clicks
-    let second = router.process(left: nil, right: pinchReading, now: Date().addingTimeInterval(0.01))
-    #expect(second.contains { if case .click = $0 { return true }; return false } == false)
-}
-
-@Test func rightHandPinchTwiceInQuickSuccessionEmitsDoubleClick() {
-    var router = HandActionRouter()
-    let pinchReading = reading(chirality: .right, gesture: .pinch)
-    let noneReading = reading(chirality: .right, gesture: .none)
-
-    let t0 = Date()
-    _ = router.process(left: nil, right: pinchReading, now: t0)
-    _ = router.process(left: nil, right: noneReading, now: t0.addingTimeInterval(0.05))
-    let second = router.process(left: nil, right: pinchReading, now: t0.addingTimeInterval(0.15))
-
-    #expect(second.contains { if case .doubleClick = $0 { return true }; return false })
-}
-
-@Test func rightHandPinchAfterWindowIsFreshClick() {
-    var router = HandActionRouter()
-    let pinchReading = reading(chirality: .right, gesture: .pinch)
-    let noneReading = reading(chirality: .right, gesture: .none)
-
-    let t0 = Date()
-    _ = router.process(left: nil, right: pinchReading, now: t0)
-    _ = router.process(left: nil, right: noneReading, now: t0.addingTimeInterval(0.1))
-    let second = router.process(left: nil, right: pinchReading, now: t0.addingTimeInterval(0.5))
-
-    // Outside window → should be a single click, not a double
-    #expect(second.contains { if case .click = $0 { return true }; return false })
-    #expect(second.contains { if case .doubleClick = $0 { return true }; return false } == false)
-}
-
-@Test func rightHandFistEntersAndExitsDragMode() {
-    var router = HandActionRouter()
-
-    // Fist → drag begin
-    let fist = reading(chirality: .right, gesture: .fist)
-    let beginActions = router.process(left: nil, right: fist)
-    #expect(beginActions.contains { if case .dragBegin = $0 { return true }; return false })
-    #expect(router.isDragging == true)
-
-    // Sustained fist → no new drag begin
-    let stillFist = router.process(left: nil, right: fist)
-    #expect(stillFist.contains { if case .dragBegin = $0 { return true }; return false } == false)
-
-    // Release → drag end
-    let none = reading(chirality: .right, gesture: .none)
-    let endActions = router.process(left: nil, right: none)
-    #expect(endActions.contains { if case .dragEnd = $0 { return true }; return false })
-    #expect(router.isDragging == false)
-}
-
-@Test func rightHandOpenHandEmitsScroll() {
-    var router = HandActionRouter()
-    let openHand = reading(chirality: .right, gesture: .openHand)
-
-    let actions = router.process(left: nil, right: openHand)
-
-    #expect(actions.contains { if case .scroll = $0 { return true }; return false })
-}
-
-@Test func rightHandRemovalEndsDragSafely() {
-    var router = HandActionRouter()
-    _ = router.process(left: nil, right: reading(chirality: .right, gesture: .fist))
-    #expect(router.isDragging == true)
-
-    // Hand disappears
-    let actions = router.process(left: nil, right: nil)
-    #expect(actions.contains { if case .dragEnd = $0 { return true }; return false })
-    #expect(router.isDragging == false)
-}
-
-// MARK: - Left hand tests
-
-@Test func leftFistHoldsAndReleasesCommand() {
-    var router = HandActionRouter()
-
-    _ = router.process(
-        left: reading(chirality: .left, gesture: .fist),
-        right: nil
-    )
-    #expect(router.isCommandHeld == true)
-
-    let releaseActions = router.process(
-        left: reading(chirality: .left, gesture: .none),
-        right: nil
-    )
-    #expect(releaseActions.contains(.releaseCommand))
-    #expect(router.isCommandHeld == false)
-}
-
-@Test func leftPinchTriggersMissionControl() {
+@Test func leftPinchHeldDoesNotSpamClicks() {
     var router = HandActionRouter()
     let pinch = reading(chirality: .left, gesture: .pinch)
 
-    let actions = router.process(left: pinch, right: nil)
+    // First pinch frame → click.
+    let first = router.process(left: pinch, right: nil)
+    #expect(first.filter { if case .click = $0 { return true }; return false }.count == 1)
 
-    #expect(actions.contains(.missionControl))
+    // Sustained pinch should NOT fire another click.
+    let second = router.process(left: pinch, right: nil)
+    #expect(second.filter { if case .click = $0 { return true }; return false }.count == 0)
 }
 
-@Test func leftOpenHandTriggersShowDesktop() {
+@Test func leftPinchAfterReleaseFiresAgain() {
     var router = HandActionRouter()
-    let openHand = reading(chirality: .left, gesture: .openHand)
+    let pinch = reading(chirality: .left, gesture: .pinch)
+    let none = reading(chirality: .left, gesture: .none)
 
-    let actions = router.process(left: openHand, right: nil)
+    _ = router.process(left: pinch, right: nil)
+    _ = router.process(left: none, right: nil)
+    let second = router.process(left: pinch, right: nil)
 
-    #expect(actions.contains(.showDesktop))
+    #expect(second.filter { if case .click = $0 { return true }; return false }.count == 1)
 }
 
-@Test func leftPointingAtLeftEdgeSwitchesSpaceLeft() {
+@Test func leftHandOtherGesturesDoNotClick() {
     var router = HandActionRouter()
-    let left = reading(
-        chirality: .left,
-        gesture: .pointing,
-        landmarks: landmarks(wrist: CGPoint(x: 0.1, y: 0.5))
-    )
 
-    let actions = router.process(left: left, right: nil)
-
-    #expect(actions.contains(.switchSpaceLeft))
+    for gesture in [DetectedHandGesture.pointing, .openHand, .fist, .none] {
+        var fresh = router
+        let r = reading(chirality: .left, gesture: gesture)
+        let actions = fresh.process(left: r, right: nil)
+        #expect(actions.contains { if case .click = $0 { return true }; return false } == false)
+    }
 }
 
-@Test func leftPointingAtRightEdgeSwitchesSpaceRight() {
+// MARK: - Neither hand = no actions
+
+@Test func noHandsEmitsNoActions() {
     var router = HandActionRouter()
-    let left = reading(
-        chirality: .left,
-        gesture: .pointing,
-        landmarks: landmarks(wrist: CGPoint(x: 0.9, y: 0.5))
-    )
-
-    let actions = router.process(left: left, right: nil)
-
-    #expect(actions.contains(.switchSpaceRight))
-}
-
-@Test func leftPointingInTheMiddleDoesNotSwitchSpace() {
-    var router = HandActionRouter()
-    let left = reading(
-        chirality: .left,
-        gesture: .pointing,
-        landmarks: landmarks(wrist: CGPoint(x: 0.5, y: 0.5))
-    )
-
-    let actions = router.process(left: left, right: nil)
-
-    #expect(actions.contains(.switchSpaceLeft) == false)
-    #expect(actions.contains(.switchSpaceRight) == false)
-}
-
-@Test func leftHandRemovalReleasesCommand() {
-    var router = HandActionRouter()
-    _ = router.process(left: reading(chirality: .left, gesture: .fist), right: nil)
-    #expect(router.isCommandHeld == true)
-
-    // Hand disappears
     let actions = router.process(left: nil, right: nil)
-    #expect(actions.contains(.releaseCommand))
-    #expect(router.isCommandHeld == false)
+    #expect(actions.isEmpty)
+}
+
+@Test func leftHandDisappearingResetsPinchTracking() {
+    var router = HandActionRouter()
+
+    // Left hand pinches → click.
+    let pinch = reading(chirality: .left, gesture: .pinch)
+    _ = router.process(left: pinch, right: nil)
+
+    // Hand disappears.
+    _ = router.process(left: nil, right: nil)
+
+    // New pinch frame should fire a fresh click (edge-triggered again).
+    let second = router.process(left: pinch, right: nil)
+    #expect(second.filter { if case .click = $0 { return true }; return false }.count == 1)
 }
 
 // MARK: - Both hands concurrently
 
-@Test func bothHandsCanActSimultaneously() {
+@Test func bothHandsCursorAndClickFireTogether() {
     var router = HandActionRouter()
+
+    // First frame: right establishes cursor at (0.6, 0.3), left idle.
     let right = reading(
         chirality: .right,
-        gesture: .pointing,
-        landmarks: landmarks(index: CGPoint(x: 0.5, y: 0.5))
+        gesture: .none,
+        landmarks: landmarks(index: CGPoint(x: 0.6, y: 0.3))
     )
-    let left = reading(chirality: .left, gesture: .fist)
+    let idle = reading(chirality: .left, gesture: .none)
+    _ = router.process(left: idle, right: right)
 
-    let actions = router.process(left: left, right: right)
+    // Second frame: right still there, left transitions into pinch.
+    let leftPinch = reading(chirality: .left, gesture: .pinch)
+    let actions = router.process(left: leftPinch, right: right)
 
+    // Should have BOTH a moveCursor (from right) AND a click (from left
+    // transition), and the click should be at the right hand's index tip.
     #expect(actions.contains { if case .moveCursor = $0 { return true }; return false })
-    #expect(actions.contains(.holdCommand))
+    #expect(actions.contains { action in
+        if case .click(let p) = action { return p.x == 0.6 && p.y == 0.3 }
+        return false
+    })
+}
+
+// MARK: - Reserved action cases (type-level)
+
+@Test func reservedActionCasesStillExist() {
+    // These cases are not emitted by the simplified router, but they
+    // remain in the enum so existing tests and future features can use
+    // them without reshaping the public surface.
+    let cases: [HandAction] = [
+        .doubleClick(at: .zero),
+        .dragBegin(at: .zero),
+        .dragEnd(at: .zero),
+        .scroll(deltaY: 0),
+        .missionControl,
+        .showDesktop,
+        .switchSpaceLeft,
+        .switchSpaceRight,
+        .holdCommand,
+        .releaseCommand,
+    ]
+    #expect(cases.count == 10)
 }
