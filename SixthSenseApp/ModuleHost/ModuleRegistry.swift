@@ -19,18 +19,28 @@ final class ModuleRegistry {
     private(set) var modules: [AnyModule] = []
     private let services: SharedServiceContainer
 
+    /// Concrete HandCommand reference, kept so the Training window can
+    /// observe its live `latestSnapshot`. The same instance is also wrapped
+    /// in the AnyModule registered in `modules`.
+    let handCommand: HandCommandModule
+
     init(services: SharedServiceContainer) {
         self.services = services
 
+        // Create the concrete HandCommand first so we can retain a typed
+        // reference for the Training view while still registering it.
+        let handCommand = HandCommandModule(
+            cameraManager: services.camera,
+            overlayManager: services.overlay,
+            accessibilityService: services.accessibility,
+            cursorController: services.input,
+            eventBus: services.eventBus
+        )
+        self.handCommand = handCommand
+
         // Register all modules — explicit, compile-time safe, wrapped in AnyModule
         modules = [
-            AnyModule(HandCommandModule(
-                cameraManager: services.camera,
-                overlayManager: services.overlay,
-                accessibilityService: services.accessibility,
-                cursorController: services.input,
-                eventBus: services.eventBus
-            )),
+            AnyModule(handCommand),
             AnyModule(GazeShiftModule(
                 cameraManager: services.camera,
                 overlayManager: services.overlay,

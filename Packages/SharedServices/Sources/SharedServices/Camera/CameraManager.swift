@@ -15,6 +15,14 @@ public final class CameraManager {
     private let distributor = CameraFrameDistributor()
     private var subscriberCount = 0
 
+    /// Exposes the underlying AVCaptureSession for read-only consumers like
+    /// the training preview window, which needs to wire an
+    /// AVCaptureVideoPreviewLayer to the shared session. Returns nil when no
+    /// subscribers are active (session is not running).
+    public var avSession: AVCaptureSession? {
+        session
+    }
+
     public init() {}
 
     /// Subscribe to camera frames. The camera starts automatically when the first subscriber registers.
