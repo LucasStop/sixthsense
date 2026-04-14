@@ -78,10 +78,22 @@ public final class HandCommandModule: SixthSenseModule {
     /// Maximum number of debug lines to retain.
     public static let debugLineLimit = 10
 
-    /// The "useful" input range along each normalized axis. Values outside
-    /// this range saturate to the screen edge, so the user only needs to
-    /// move their hand within a comfortable middle region of the frame.
+    /// The baseline "useful" input range along each normalized axis.
+    /// Values outside this range saturate to the screen edge, so the user
+    /// only needs to move their hand within a comfortable middle region of
+    /// the frame. `sensitivity` multiplies this to produce the effective
+    /// deadzone actually used in dispatch — bigger sensitivity shrinks the
+    /// usable region and makes the cursor faster.
     public var inputDeadzone: CGFloat = 0.18
+
+    /// The effective deadzone currently in use, derived from `inputDeadzone`
+    /// and `sensitivity` and clamped to a sensible range. Exposed publicly
+    /// so the settings view can visualise the usable zone live as the
+    /// user drags the slider.
+    public var effectiveDeadzone: Double {
+        let scaled = Double(inputDeadzone) * sensitivity
+        return min(max(scaled, 0.08), 0.40)
+    }
 
     // MARK: - Dependencies
 
@@ -304,7 +316,11 @@ public final class HandCommandModule: SixthSenseModule {
     private func dispatch(actions: [HandAction]) {
         guard let screen = NSScreen.main else { return }
         let size = screen.frame.size
-        let deadzone = inputDeadzone
+
+        // Sensitivity scales the usable deadzone. Higher sensitivity →
+        // narrower usable region of the camera frame → the cursor covers
+        // the full screen with smaller hand movements.
+        let deadzone = CGFloat(effectiveDeadzone)
 
         // Face recognition gate. When a gate is attached and denies
         // access, we suppress every cursor/keyboard action this frame but
@@ -464,22 +480,7 @@ public final class HandCommandModule: SixthSenseModule {
     // MARK: - Settings View
 
     public var settingsView: some View {
-        Form {
-            Section("Rastreamento de Mãos") {
-                HStack {
-                    Text("Sensibilidade")
-                    Slider(value: Binding(get: { self.sensitivity },
-                                          set: { self.sensitivity = $0 }),
-                           in: 0.1...3.0, step: 0.1)
-                    Text(String(format: "%.1fx", sensitivity))
-                        .monospacedDigit()
-                        .frame(width: 40)
-                }
-                Text("Ajuste o quanto o movimento da mão se traduz em movimento do cursor.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
+        HandCommandSettingsForm(module: self)
     }
 }
 

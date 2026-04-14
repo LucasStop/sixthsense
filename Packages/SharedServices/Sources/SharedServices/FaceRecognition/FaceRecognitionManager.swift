@@ -53,11 +53,40 @@ public final class FaceRecognitionManager: FaceGate {
 
     // MARK: - Enrollment state (for FaceEnrollmentView)
 
-    /// Number of feature prints captured so far during an active enrollment.
-    public private(set) var enrollmentProgress: Int = 0
+    /// All targets the user must hit during the current enrollment session.
+    /// Empty when no enrollment is active.
+    public private(set) var enrollmentTargets: [EnrollmentTarget] = []
 
-    /// Total feature prints to capture before finishing enrollment.
-    public private(set) var enrollmentTarget: Int = 0
+    /// IDs of the targets already captured.
+    public private(set) var enrollmentCompletedIds: Set<Int> = []
+
+    /// Index into `enrollmentTargets` for the target the user is
+    /// currently trying to hit.
+    public private(set) var enrollmentCurrentTargetIndex: Int = 0
+
+    /// Convenience: the target the user is trying to hit right now.
+    public var enrollmentCurrentTarget: EnrollmentTarget? {
+        guard enrollmentTargets.indices.contains(enrollmentCurrentTargetIndex) else {
+            return nil
+        }
+        return enrollmentTargets[enrollmentCurrentTargetIndex]
+    }
+
+    /// Total number of targets to hit. Used by the view to compute
+    /// percent-complete.
+    public var enrollmentTotal: Int { enrollmentTargets.count }
+
+    /// Number of targets already captured.
+    public var enrollmentProgress: Int { enrollmentCompletedIds.count }
+
+    /// The user's current face pose, sampled every frame during
+    /// enrollment. `nil` when no face is visible. The view uses this to
+    /// move a live cursor inside the enrollment ring.
+    public private(set) var enrollmentCurrentPose: FaceAngle?
+
+    /// Vision's face capture quality score for the current frame, 0-1.
+    /// The view can surface this to the user ("melhore a iluminação" etc).
+    public private(set) var enrollmentQuality: Float = 0
 
     /// Whether an enrollment session is currently running.
     public private(set) var isEnrolling: Bool = false
@@ -65,6 +94,13 @@ public final class FaceRecognitionManager: FaceGate {
     /// Bounding box of the last face seen during enrollment, for the
     /// preview overlay. `nil` when no face is currently visible.
     public private(set) var enrollmentFaceBox: CGRect?
+
+    /// True once every target has been captured. The view watches this
+    /// to advance to the "choose your mode" phase automatically.
+    public var isEnrollmentComplete: Bool {
+        !enrollmentTargets.isEmpty &&
+        enrollmentCompletedIds.count >= enrollmentTargets.count
+    }
 
     // MARK: - Dependencies
 
@@ -161,21 +197,38 @@ public final class FaceRecognitionManager: FaceGate {
         state = FaceRecognitionState(mode: store.lockMode)
     }
 
-    // MARK: - Enrollment flow
+    // MARK: - Guided enrollment flow
 
-    /// Called by FaceEnrollmentView to kick off a capture session. The
-    /// manager already owns the camera subscription, so we just flip a
-    /// flag and start recording feature prints as frames come in.
-    public func beginEnrollment(target: Int = 10) {
-        enrollmentTarget = target
-        enrollmentProgress = 0
+    /// Max angular distance (in degrees) the current pose can be from the
+    /// target before we accept it. Around 7° feels "locked on" without
+    /// being too loose.
+    public var enrollmentHitRadius: Double = 7.0
+
+    /// Minimum face capture quality accepted for enrollment, 0-1.
+    /// Vision tends to score a well-lit frontal face around 0.7-0.9.
+    public var enrollmentMinimumQuality: Float = 0.5
+
+    /// Minimum hold duration in seconds after hitting a target before we
+    /// commit the feature print. Prevents counting a drive-by through a
+    /// target as a capture.
+    public var enrollmentHoldDuration: TimeInterval = 0.15
+
+    /// Start a guided enrollment session with the default 9-point ring.
+    /// Replaces the old linear beginEnrollment.
+    public func beginGuidedEnrollment(
+        targets: [EnrollmentTarget] = EnrollmentTarget.defaultRing
+    ) {
+        enrollmentTargets = targets
+        enrollmentCompletedIds = []
+        enrollmentCurrentTargetIndex = 0
+        enrollmentCurrentPose = nil
+        enrollmentQuality = 0
         enrollmentBuffer = []
         enrollmentFaceBox = nil
-        lastEnrollmentCaptureAt = nil
+        holdStartTime = nil
         isEnrolling = true
 
-        // Make sure we're subscribed to the camera. If HandCommand isn't
-        // running, the camera won't be on, so we bring it up ourselves.
+        // Make sure we're subscribed to the camera.
         if !isSubscribed {
             cameraManager.subscribe(id: subscriberId) { [weak self] sampleBuffer in
                 Task { @MainActor in
@@ -186,17 +239,21 @@ public final class FaceRecognitionManager: FaceGate {
         }
     }
 
-    /// Called when the user clicks "Cancelar" mid-enrollment.
+    /// Abort an in-progress enrollment without saving anything.
     public func cancelEnrollment() {
         isEnrolling = false
         enrollmentBuffer = []
-        enrollmentProgress = 0
+        enrollmentCompletedIds = []
+        enrollmentCurrentTargetIndex = 0
         enrollmentFaceBox = nil
+        enrollmentCurrentPose = nil
+        enrollmentQuality = 0
+        holdStartTime = nil
     }
 
-    /// Return the embeddings captured during the current enrollment session.
-    /// Consumers call this once progress == target and then decide whether
-    /// to save them (via `enroll(embeddings:activateMode:)`) or discard.
+    /// Returns the feature prints captured across all completed targets.
+    /// Consumers call this once `isEnrollmentComplete` is true and then
+    /// hand the array to `enroll(embeddings:activateMode:)`.
     public func capturedEnrollmentEmbeddings() -> [VNFeaturePrintObservation] {
         enrollmentBuffer
     }
@@ -204,8 +261,7 @@ public final class FaceRecognitionManager: FaceGate {
     // MARK: - Internal enrollment state
 
     private var enrollmentBuffer: [VNFeaturePrintObservation] = []
-    private var lastEnrollmentCaptureAt: Date?
-    private let enrollmentMinInterval: TimeInterval = 0.35
+    private var holdStartTime: Date?
 
     // MARK: - Frame processing
 
@@ -279,13 +335,6 @@ public final class FaceRecognitionManager: FaceGate {
     }
 
     private func processEnrollmentFrame(pixelBuffer: CVPixelBuffer) {
-        // Pace the expensive feature-print calls so we don't melt CPU.
-        let now = Date()
-        if let last = lastEnrollmentCaptureAt,
-           now.timeIntervalSince(last) < enrollmentMinInterval {
-            return
-        }
-
         let handler = VNImageRequestHandler(
             cvPixelBuffer: pixelBuffer,
             orientation: .upMirrored,
@@ -295,42 +344,112 @@ public final class FaceRecognitionManager: FaceGate {
         visionQueue.async { [weak self] in
             guard let self else { return }
             do {
-                try handler.perform([self.faceRequest])
+                // Run landmark + quality requests on the same frame so
+                // the quality score aligns with the pose reading.
+                let qualityRequest = VNDetectFaceCaptureQualityRequest()
+                try handler.perform([self.faceRequest, qualityRequest])
+
                 guard let face = self.faceRequest.results?.first else {
-                    Task { @MainActor in self.enrollmentFaceBox = nil }
+                    Task { @MainActor in
+                        self.enrollmentFaceBox = nil
+                        self.enrollmentCurrentPose = nil
+                        self.enrollmentQuality = 0
+                    }
                     return
                 }
 
-                // Only capture when the user is reasonably facing the camera.
-                let looking = Self.isLookingAtScreen(
-                    face: face,
-                    threshold: self.lookingAtScreenThreshold
+                let yawRad = face.yaw?.doubleValue ?? 0
+                let pitchRad = face.pitch?.doubleValue ?? 0
+                let pose = FaceAngle(
+                    yaw: yawRad * 180.0 / .pi,
+                    pitch: pitchRad * 180.0 / .pi
                 )
-                guard looking else {
-                    Task { @MainActor in self.enrollmentFaceBox = face.boundingBox }
-                    return
+
+                let quality: Float = (qualityRequest.results?.first as? VNFaceObservation)?
+                    .faceCaptureQuality ?? 0
+
+                // Compute feature print lazily — only when the user is
+                // actually on target and stable, otherwise we burn CPU.
+                let onTarget: Bool
+                if let target = self.enrollmentTargets.indices.contains(self.enrollmentCurrentTargetIndex)
+                    ? self.enrollmentTargets[self.enrollmentCurrentTargetIndex] : nil {
+                    onTarget = pose.distance(to: target.angle) <= self.enrollmentHitRadius &&
+                               quality >= self.enrollmentMinimumQuality
+                } else {
+                    onTarget = false
                 }
 
-                let print = Self.computeFeaturePrint(
-                    face: face,
-                    pixelBuffer: pixelBuffer
-                )
+                var capturedPrint: VNFeaturePrintObservation?
+                if onTarget {
+                    capturedPrint = Self.computeFeaturePrint(
+                        face: face,
+                        pixelBuffer: pixelBuffer
+                    )
+                }
 
                 Task { @MainActor in
                     self.enrollmentFaceBox = face.boundingBox
-                    if let print {
-                        self.enrollmentBuffer.append(print)
-                        self.enrollmentProgress = self.enrollmentBuffer.count
-                        self.lastEnrollmentCaptureAt = now
-
-                        if self.enrollmentBuffer.count >= self.enrollmentTarget {
-                            self.isEnrolling = false
-                        }
-                    }
+                    self.enrollmentCurrentPose = pose
+                    self.enrollmentQuality = quality
+                    self.applyEnrollmentCapture(onTarget: onTarget, print: capturedPrint)
                 }
             } catch {
                 // Skip on Vision error.
             }
+        }
+    }
+
+    /// Main-actor side of the enrollment state machine. Decides whether
+    /// the current target has been satisfied (requires a sustained hold
+    /// before committing the capture) and advances to the next one.
+    private func applyEnrollmentCapture(
+        onTarget: Bool,
+        print capturedPrint: VNFeaturePrintObservation?
+    ) {
+        guard isEnrolling else { return }
+
+        if !onTarget {
+            // Moved off target or quality dropped — reset the hold timer.
+            holdStartTime = nil
+            return
+        }
+
+        let now = Date()
+        if let start = holdStartTime {
+            let heldFor = now.timeIntervalSince(start)
+            guard heldFor >= enrollmentHoldDuration else { return }
+        } else {
+            holdStartTime = now
+            return
+        }
+
+        // Hold completed — commit the capture if we managed to compute
+        // a feature print for this frame. If the print is nil (rare),
+        // we reset and let the next frame try again.
+        guard let capturedPrint else {
+            holdStartTime = nil
+            return
+        }
+
+        guard enrollmentTargets.indices.contains(enrollmentCurrentTargetIndex) else {
+            return
+        }
+        let target = enrollmentTargets[enrollmentCurrentTargetIndex]
+        if enrollmentCompletedIds.contains(target.id) {
+            holdStartTime = nil
+            return
+        }
+
+        enrollmentBuffer.append(capturedPrint)
+        enrollmentCompletedIds.insert(target.id)
+        holdStartTime = nil
+
+        // Advance to the next target, or finish.
+        let next = enrollmentCurrentTargetIndex + 1
+        if next < enrollmentTargets.count {
+            enrollmentCurrentTargetIndex = next
+        } else {
+            isEnrolling = false
         }
     }
 

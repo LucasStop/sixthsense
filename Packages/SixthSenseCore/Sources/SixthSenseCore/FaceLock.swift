@@ -137,3 +137,130 @@ public protocol FaceGate: AnyObject {
     /// Convenience passthrough — equivalent to `state.canUseGestures`.
     var canUseGestures: Bool { get }
 }
+
+// MARK: - Face Angle
+
+/// A face orientation in degrees. Used by the Face ID-style guided
+/// enrollment flow to describe target head poses and compare against
+/// the live reading coming from Vision.
+public struct FaceAngle: Sendable, Hashable {
+    /// Horizontal rotation (negative = left, positive = right).
+    public let yaw: Double
+
+    /// Vertical rotation (negative = up, positive = down).
+    public let pitch: Double
+
+    public init(yaw: Double, pitch: Double) {
+        self.yaw = yaw
+        self.pitch = pitch
+    }
+
+    public static let center = FaceAngle(yaw: 0, pitch: 0)
+
+    /// Euclidean distance in degree-space — used to decide whether the
+    /// current pose is close enough to a target to count as "on it".
+    public func distance(to other: FaceAngle) -> Double {
+        let dy = yaw - other.yaw
+        let dp = pitch - other.pitch
+        return (dy * dy + dp * dp).squareRoot()
+    }
+
+    /// Normalized position in `[0, 1]` for rendering the live pose cursor
+    /// inside the enrollment ring. The output is clamped and centered on
+    /// `(0.5, 0.5)`, assuming the ring covers ±`maxDegrees` on each axis.
+    public func normalizedPosition(maxDegrees: Double = 25.0) -> CGPoint {
+        let nx = (yaw / maxDegrees).clamped(to: -1...1)
+        let ny = (pitch / maxDegrees).clamped(to: -1...1)
+        return CGPoint(x: 0.5 + nx * 0.5, y: 0.5 + ny * 0.5)
+    }
+}
+
+// MARK: - Enrollment Target
+
+/// A single pose the user must hit during guided enrollment. Rendered in
+/// the UI as a segment of the circular progress ring, with a label that
+/// guides the user to the right angle.
+public struct EnrollmentTarget: Sendable, Identifiable, Hashable {
+    public let id: Int
+    public let angle: FaceAngle
+    public let label: String
+    public let systemImage: String
+
+    public init(id: Int, angle: FaceAngle, label: String, systemImage: String) {
+        self.id = id
+        self.angle = angle
+        self.label = label
+        self.systemImage = systemImage
+    }
+
+    /// Eight-point ring used by the default enrollment flow. Center is
+    /// the zero target and the remaining 8 cover the cardinal and
+    /// diagonal compass directions at around ±18° from center. These
+    /// angles are deliberately modest — inside the `lookingAtScreenThreshold`
+    /// of 25° — so the captured embeddings don't include extreme poses
+    /// that will never actually be used during recognition.
+    public static let defaultRing: [EnrollmentTarget] = [
+        EnrollmentTarget(
+            id: 0,
+            angle: FaceAngle(yaw: 0, pitch: 0),
+            label: "Olhe reto para a câmera",
+            systemImage: "face.smiling"
+        ),
+        EnrollmentTarget(
+            id: 1,
+            angle: FaceAngle(yaw: 0, pitch: -16),
+            label: "Incline a cabeça para cima",
+            systemImage: "arrow.up.circle"
+        ),
+        EnrollmentTarget(
+            id: 2,
+            angle: FaceAngle(yaw: 14, pitch: -12),
+            label: "Gire para o canto superior direito",
+            systemImage: "arrow.up.right.circle"
+        ),
+        EnrollmentTarget(
+            id: 3,
+            angle: FaceAngle(yaw: 18, pitch: 0),
+            label: "Gire a cabeça para a direita",
+            systemImage: "arrow.right.circle"
+        ),
+        EnrollmentTarget(
+            id: 4,
+            angle: FaceAngle(yaw: 14, pitch: 12),
+            label: "Gire para o canto inferior direito",
+            systemImage: "arrow.down.right.circle"
+        ),
+        EnrollmentTarget(
+            id: 5,
+            angle: FaceAngle(yaw: 0, pitch: 16),
+            label: "Incline a cabeça para baixo",
+            systemImage: "arrow.down.circle"
+        ),
+        EnrollmentTarget(
+            id: 6,
+            angle: FaceAngle(yaw: -14, pitch: 12),
+            label: "Gire para o canto inferior esquerdo",
+            systemImage: "arrow.down.left.circle"
+        ),
+        EnrollmentTarget(
+            id: 7,
+            angle: FaceAngle(yaw: -18, pitch: 0),
+            label: "Gire a cabeça para a esquerda",
+            systemImage: "arrow.left.circle"
+        ),
+        EnrollmentTarget(
+            id: 8,
+            angle: FaceAngle(yaw: -14, pitch: -12),
+            label: "Gire para o canto superior esquerdo",
+            systemImage: "arrow.up.left.circle"
+        ),
+    ]
+}
+
+// MARK: - Helper
+
+private extension Comparable {
+    func clamped(to range: ClosedRange<Self>) -> Self {
+        min(max(self, range.lowerBound), range.upperBound)
+    }
+}

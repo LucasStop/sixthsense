@@ -211,3 +211,38 @@ private func makeModuleWithKeyboard() -> (HandCommandModule, MockCameraPipeline,
     #expect(module.inputDeadzone > 0)
     #expect(module.inputDeadzone < 0.5)
 }
+
+// MARK: - Sensitivity scaling
+
+@Test @MainActor func effectiveDeadzoneRespectsDefaultSensitivity() {
+    let (module, _, _, _, _, _) = makeModule()
+    #expect(module.sensitivity == 1.0)
+    // Baseline deadzone × 1.0 sensitivity should equal baseline.
+    #expect(abs(module.effectiveDeadzone - Double(module.inputDeadzone)) < 0.001)
+}
+
+@Test @MainActor func effectiveDeadzoneGrowsWithSensitivity() {
+    let (module, _, _, _, _, _) = makeModule()
+    module.sensitivity = 2.0
+    // 0.18 × 2.0 = 0.36, within the [0.08, 0.40] clamp.
+    #expect(module.effectiveDeadzone > Double(module.inputDeadzone))
+    #expect(module.effectiveDeadzone <= 0.40)
+}
+
+@Test @MainActor func effectiveDeadzoneShrinksWithLowSensitivity() {
+    let (module, _, _, _, _, _) = makeModule()
+    module.sensitivity = 0.5
+    // 0.18 × 0.5 = 0.09
+    #expect(module.effectiveDeadzone < Double(module.inputDeadzone))
+    #expect(module.effectiveDeadzone >= 0.08)
+}
+
+@Test @MainActor func effectiveDeadzoneClampsAtExtremeSensitivity() {
+    let (module, _, _, _, _, _) = makeModule()
+
+    module.sensitivity = 0.01
+    #expect(module.effectiveDeadzone == 0.08)
+
+    module.sensitivity = 10.0
+    #expect(module.effectiveDeadzone == 0.40)
+}
