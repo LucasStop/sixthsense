@@ -228,3 +228,27 @@ import CoreGraphics
     #expect(target.id == 42)
     #expect(target.angle.yaw == 5)
 }
+
+@Test func defaultRingAnglesAreGentleEnoughForVision() {
+    // Vision's face landmark detector drops out around ±20-25°. The
+    // default ring is supposed to stay well below that so the user can
+    // hit every target without losing the face mid-rotation. We enforce
+    // a ±12° envelope — the failure mode in real use was the ring being
+    // too aggressive at ±18°, making Vision lose track.
+    for target in EnrollmentTarget.defaultRing {
+        #expect(abs(target.angle.yaw) <= 12)
+        #expect(abs(target.angle.pitch) <= 10)
+    }
+}
+
+@Test func normalizedPositionMatchesRingDefault() {
+    // The view layer uses maxDegrees = 14 for the default ring, so a
+    // target at exactly 12° should land just inside the edge (~0.93).
+    let right = FaceAngle(yaw: 12, pitch: 0).normalizedPosition()
+    #expect(abs(right.x - (0.5 + 12.0 / 14.0 * 0.5)) < 0.001)
+    #expect(abs(right.y - 0.5) < 0.001)
+
+    // And a 14° pose should saturate exactly at the edge.
+    let edge = FaceAngle(yaw: 14, pitch: 0).normalizedPosition()
+    #expect(edge.x == 1.0)
+}

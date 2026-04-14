@@ -168,7 +168,11 @@ public struct FaceAngle: Sendable, Hashable {
     /// Normalized position in `[0, 1]` for rendering the live pose cursor
     /// inside the enrollment ring. The output is clamped and centered on
     /// `(0.5, 0.5)`, assuming the ring covers ±`maxDegrees` on each axis.
-    public func normalizedPosition(maxDegrees: Double = 25.0) -> CGPoint {
+    ///
+    /// Default is 14° because the default enrollment ring pushes targets
+    /// out to ±12°, and we want them to land just inside the ring edge
+    /// instead of clipping to it.
+    public func normalizedPosition(maxDegrees: Double = 14.0) -> CGPoint {
         let nx = (yaw / maxDegrees).clamped(to: -1...1)
         let ny = (pitch / maxDegrees).clamped(to: -1...1)
         return CGPoint(x: 0.5 + nx * 0.5, y: 0.5 + ny * 0.5)
@@ -193,12 +197,16 @@ public struct EnrollmentTarget: Sendable, Identifiable, Hashable {
         self.systemImage = systemImage
     }
 
-    /// Eight-point ring used by the default enrollment flow. Center is
-    /// the zero target and the remaining 8 cover the cardinal and
-    /// diagonal compass directions at around ±18° from center. These
-    /// angles are deliberately modest — inside the `lookingAtScreenThreshold`
-    /// of 25° — so the captured embeddings don't include extreme poses
-    /// that will never actually be used during recognition.
+    /// Nine-point ring used by the default enrollment flow. Center is the
+    /// zero target and the remaining 8 cover the cardinal and diagonal
+    /// compass directions at ±10°-12° from center.
+    ///
+    /// Why so gentle? Vision's `VNDetectFaceLandmarksRequest` starts
+    /// losing the face past ~25° of yaw/pitch, and users naturally
+    /// over-rotate when trying to hit a visible dot. Keeping the targets
+    /// inside ±12° means Vision reliably tracks the pose all the way to
+    /// the edge of the ring, and the user only needs a subtle head turn
+    /// to capture each angle.
     public static let defaultRing: [EnrollmentTarget] = [
         EnrollmentTarget(
             id: 0,
@@ -208,50 +216,50 @@ public struct EnrollmentTarget: Sendable, Identifiable, Hashable {
         ),
         EnrollmentTarget(
             id: 1,
-            angle: FaceAngle(yaw: 0, pitch: -16),
-            label: "Incline a cabeça para cima",
+            angle: FaceAngle(yaw: 0, pitch: -10),
+            label: "Incline levemente a cabeça para cima",
             systemImage: "arrow.up.circle"
         ),
         EnrollmentTarget(
             id: 2,
-            angle: FaceAngle(yaw: 14, pitch: -12),
-            label: "Gire para o canto superior direito",
+            angle: FaceAngle(yaw: 9, pitch: -8),
+            label: "Olhe para o canto superior direito",
             systemImage: "arrow.up.right.circle"
         ),
         EnrollmentTarget(
             id: 3,
-            angle: FaceAngle(yaw: 18, pitch: 0),
-            label: "Gire a cabeça para a direita",
+            angle: FaceAngle(yaw: 12, pitch: 0),
+            label: "Olhe levemente para a direita",
             systemImage: "arrow.right.circle"
         ),
         EnrollmentTarget(
             id: 4,
-            angle: FaceAngle(yaw: 14, pitch: 12),
-            label: "Gire para o canto inferior direito",
+            angle: FaceAngle(yaw: 9, pitch: 8),
+            label: "Olhe para o canto inferior direito",
             systemImage: "arrow.down.right.circle"
         ),
         EnrollmentTarget(
             id: 5,
-            angle: FaceAngle(yaw: 0, pitch: 16),
-            label: "Incline a cabeça para baixo",
+            angle: FaceAngle(yaw: 0, pitch: 10),
+            label: "Incline levemente a cabeça para baixo",
             systemImage: "arrow.down.circle"
         ),
         EnrollmentTarget(
             id: 6,
-            angle: FaceAngle(yaw: -14, pitch: 12),
-            label: "Gire para o canto inferior esquerdo",
+            angle: FaceAngle(yaw: -9, pitch: 8),
+            label: "Olhe para o canto inferior esquerdo",
             systemImage: "arrow.down.left.circle"
         ),
         EnrollmentTarget(
             id: 7,
-            angle: FaceAngle(yaw: -18, pitch: 0),
-            label: "Gire a cabeça para a esquerda",
+            angle: FaceAngle(yaw: -12, pitch: 0),
+            label: "Olhe levemente para a esquerda",
             systemImage: "arrow.left.circle"
         ),
         EnrollmentTarget(
             id: 8,
-            angle: FaceAngle(yaw: -14, pitch: -12),
-            label: "Gire para o canto superior esquerdo",
+            angle: FaceAngle(yaw: -9, pitch: -8),
+            label: "Olhe para o canto superior esquerdo",
             systemImage: "arrow.up.left.circle"
         ),
     ]
