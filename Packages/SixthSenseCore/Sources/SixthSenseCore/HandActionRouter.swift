@@ -158,20 +158,30 @@ public struct HandActionRouter: Sendable {
     ) -> [HandAction] {
         var actions: [HandAction] = []
 
-        // Right hand → cursor movement. Gesture-agnostic: as long as the
-        // index tip is confident, we move there (after smoothing).
+        // Right hand → cursor movement. Moves with the index tip when the
+        // hand is in a cursor-friendly pose, but FREEZES during a right
+        // fist so the user can hold the Mission Control trigger without
+        // the cursor being yanked toward the curled finger's position.
+        // The pause also gives the classifier a stable 400ms window to
+        // confirm the fist without the user's hand having to fight the
+        // cursor drift.
         if let right,
+           right.gesture != .fist,
            let indexLandmark = right.snapshot.landmarks[.indexTip],
            indexLandmark.isConfident {
             let raw = indexLandmark.position
             let smoothed = smoother.smooth(raw, timestamp: now.timeIntervalSinceReferenceDate)
             actions.append(.moveCursor(normalized: smoothed))
             lastRightIndexTip = smoothed
-        } else {
+        } else if right == nil {
             // Right hand gone — forget the smoother's history so the next
             // fresh entry doesn't get dragged toward the stale position.
             smoother.reset()
         }
+        // Note: when right.gesture == .fist we intentionally skip the
+        // move AND leave the smoother untouched. lastRightIndexTip stays
+        // at the pre-fist location, so click/drag targets keep aiming
+        // at the spot the user was pointing at before closing their fist.
 
         // Right fist held → Mission Control. Fires once after the user
         // holds a right-hand fist for `missionControlHoldDuration`, then

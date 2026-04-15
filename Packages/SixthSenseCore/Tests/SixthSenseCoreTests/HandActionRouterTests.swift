@@ -36,7 +36,7 @@ private func reading(
 
 // MARK: - Right hand → cursor movement
 
-@Test func rightHandAlwaysEmitsMoveCursorRegardlessOfGesture() {
+@Test func rightHandEmitsMoveCursorForCursorFriendlyGestures() {
     var router = HandActionRouter()
 
     // Helper: check whether the frame produced ANY moveCursor action.
@@ -52,7 +52,7 @@ private func reading(
     )
     #expect(hasMove(router.process(left: nil, right: pointing)))
 
-    // .none — still moves cursor because gesture is irrelevant.
+    // .none — still moves cursor.
     let free = reading(
         chirality: .right,
         gesture: .none,
@@ -67,6 +67,54 @@ private func reading(
         landmarks: landmarks(index: CGPoint(x: 0.5, y: 0.5))
     )
     #expect(hasMove(router.process(left: nil, right: open)))
+}
+
+@Test func rightFistFreezesTheCursor() {
+    // While the right hand is in a fist pose (the Mission Control
+    // trigger), we must NOT emit moveCursor. The cursor stays put so
+    // the user can hold the gesture without fighting cursor drift.
+    var router = HandActionRouter()
+    let fist = reading(
+        chirality: .right,
+        gesture: .fist,
+        landmarks: landmarks(index: CGPoint(x: 0.2, y: 0.2))
+    )
+    let actions = router.process(left: nil, right: fist)
+    #expect(actions.contains { if case .moveCursor = $0 { return true }; return false } == false)
+}
+
+@Test func rightFistDoesNotClobberLastKnownCursorPosition() {
+    // The last pre-fist cursor position must be preserved so click/drag
+    // anchors still point at the spot the user was aiming at.
+    var router = HandActionRouter()
+
+    // Pointing establishes cursor at (0.4, 0.6).
+    let pointing = reading(
+        chirality: .right,
+        gesture: .pointing,
+        landmarks: landmarks(index: CGPoint(x: 0.4, y: 0.6))
+    )
+    _ = router.process(left: nil, right: pointing)
+
+    // Fist frame with a very different index tip position.
+    let fist = reading(
+        chirality: .right,
+        gesture: .fist,
+        landmarks: landmarks(index: CGPoint(x: 0.05, y: 0.05))
+    )
+    _ = router.process(left: nil, right: fist)
+
+    // Now a left pinch — the click target should still be (0.4, 0.6),
+    // not the fist-time index position.
+    let leftPinch = reading(chirality: .left, gesture: .pinch)
+    let actions = router.process(left: leftPinch, right: fist)
+
+    let clickPoint: CGPoint? = actions.compactMap { action in
+        if case .click(let p) = action { return p }
+        return nil
+    }.first
+    #expect(clickPoint?.x == 0.4)
+    #expect(clickPoint?.y == 0.6)
 }
 
 @Test func rightHandFirstSampleIsBootstrappedNotSmoothed() {

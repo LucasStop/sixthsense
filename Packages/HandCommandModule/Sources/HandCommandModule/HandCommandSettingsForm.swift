@@ -48,6 +48,11 @@ public struct HandCommandSettingsForm: View {
 
             Divider()
 
+            // Per-gesture enable toggles
+            gestureToggles
+
+            Divider()
+
             // Live preview of the effective usable zone
             VStack(alignment: .leading, spacing: 6) {
                 Text("Zona útil da câmera")
@@ -72,11 +77,93 @@ public struct HandCommandSettingsForm: View {
                 Spacer()
                 Button("Restaurar padrão") {
                     module.sensitivity = 1.0
+                    module.clickEnabled = true
+                    module.dragEnabled = true
+                    module.scrollEnabled = true
+                    module.missionControlEnabled = true
+                    module.appSwitcherEnabled = true
                 }
                 .controlSize(.small)
             }
         }
         .padding(.vertical, 4)
+    }
+
+    private var gestureToggles: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Gestos ativos")
+                .font(.callout.weight(.medium))
+
+            Text("Desative aqui os gestos que você não quer. O movimento do cursor (mão direita apontando) é sempre ativo — sem ele o controle não funciona.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                gestureToggleRow(
+                    icon: "hand.pinch",
+                    color: .pink,
+                    label: "Clicar",
+                    hint: "Mão esquerda faz pinça",
+                    isOn: $module.clickEnabled
+                )
+                gestureToggleRow(
+                    icon: "hand.raised.fill",
+                    color: .orange,
+                    label: "Arrastar",
+                    hint: "Mão esquerda fecha o punho",
+                    isOn: $module.dragEnabled
+                )
+                gestureToggleRow(
+                    icon: "arrow.triangle.2.circlepath",
+                    color: .purple,
+                    label: "Rolar",
+                    hint: "Círculo no ar com a esquerda",
+                    isOn: $module.scrollEnabled
+                )
+                gestureToggleRow(
+                    icon: "rectangle.on.rectangle",
+                    color: .mint,
+                    label: "Mission Control",
+                    hint: "Punho direito fechado por ~½s",
+                    isOn: $module.missionControlEnabled
+                )
+                gestureToggleRow(
+                    icon: "square.on.square",
+                    color: .yellow,
+                    label: "Trocar app (⌘+Tab)",
+                    hint: "Shaka com a esquerda",
+                    isOn: $module.appSwitcherEnabled
+                )
+            }
+        }
+    }
+
+    private func gestureToggleRow(
+        icon: String,
+        color: Color,
+        label: String,
+        hint: String,
+        isOn: Binding<Bool>
+    ) -> some View {
+        Toggle(isOn: isOn) {
+            HStack(spacing: 10) {
+                Image(systemName: icon)
+                    .font(.callout)
+                    .foregroundStyle(color)
+                    .frame(width: 22)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(label)
+                        .font(.callout)
+                    Text(hint)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+        }
+        .toggleStyle(.switch)
+        .controlSize(.small)
     }
 
     private var sensitivityHint: String {

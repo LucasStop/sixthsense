@@ -56,6 +56,17 @@ public final class HandCommandModule: SixthSenseModule {
     /// Sensitivity multiplier for cursor movement (0.1 ... 3.0).
     public var sensitivity: Double = 1.0
 
+    /// Per-gesture enable flags. Users disable gestures they don't want
+    /// so the detection pipeline still runs (training view keeps showing
+    /// the recognized pose) but dispatch is suppressed — no CGEvent,
+    /// no eventBus emission, no side effect. Cursor movement is NOT
+    /// toggleable since it's the core function of the module.
+    public var clickEnabled: Bool = true
+    public var dragEnabled: Bool = true
+    public var scrollEnabled: Bool = true
+    public var missionControlEnabled: Bool = true
+    public var appSwitcherEnabled: Bool = true
+
     // MARK: - Live Snapshots
 
     /// Snapshot of whichever hand was seen most recently (kept for backward
@@ -354,21 +365,26 @@ public final class HandCommandModule: SixthSenseModule {
                     cursorController.moveTo(point)
                 }
             case .click(let normalized):
+                guard clickEnabled else { break }
                 let point = Self.screenPoint(from: normalized, in: size, deadzone: deadzone)
                 cursorController.leftClick(at: point)
                 eventBus.emit(.handGestureDetected(.pinch(phase: .began, position: point)))
             case .dragBegin(let normalized):
+                guard dragEnabled else { break }
                 let point = Self.screenPoint(from: normalized, in: size, deadzone: deadzone)
                 cursorController.leftMouseDown(at: point)
                 eventBus.emit(.handGestureDetected(.grab(phase: .began, position: point)))
             case .dragEnd(let normalized):
+                guard dragEnabled else { break }
                 let point = Self.screenPoint(from: normalized, in: size, deadzone: deadzone)
                 cursorController.leftMouseUp(at: point)
                 eventBus.emit(.handGestureDetected(.grab(phase: .ended, position: point)))
             case .scroll(let deltaY):
+                guard scrollEnabled else { break }
                 cursorController.scroll(deltaY: deltaY, deltaX: 0)
 
             case .missionControl:
+                guard missionControlEnabled else { break }
                 // Ctrl + Up Arrow is the universally available Mission
                 // Control shortcut; some keyboards remap F3 to brightness
                 // so we avoid relying on it.
@@ -378,6 +394,7 @@ public final class HandCommandModule: SixthSenseModule {
                 )
 
             case .appSwitcher:
+                guard appSwitcherEnabled else { break }
                 // Cmd + Tab cycles to the previous app. The macOS app
                 // switcher appears briefly and commits when Cmd is
                 // released, which happens automatically since pressKey

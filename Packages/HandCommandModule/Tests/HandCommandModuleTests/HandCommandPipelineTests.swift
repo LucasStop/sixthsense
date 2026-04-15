@@ -123,19 +123,19 @@ private func reading(_ chirality: HandChirality, _ gesture: DetectedHandGesture,
 
 // MARK: - Right hand — cursor movement
 
-@Test @MainActor func pipelineRightHandAnyGestureMovesCursor() async throws {
+@Test @MainActor func pipelineRightHandCursorFriendlyGesturesMoveCursor() async throws {
     let h = Harness.make()
     try await h.module.start()
 
-    // Pointing
+    // Pointing — moves cursor.
     h.module.handleReadings([reading(.right, .pointing, wrist: CGPoint(x: 0.4, y: 0.3))])
-    // Open hand
+    // Open hand — moves cursor.
     h.module.handleReadings([reading(.right, .openHand, wrist: CGPoint(x: 0.5, y: 0.3))])
-    // Fist
+    // Fist — FREEZES cursor (Mission Control trigger), so no moveTo.
     h.module.handleReadings([reading(.right, .fist, wrist: CGPoint(x: 0.6, y: 0.3))])
 
     let moveCount = h.cursor.calls.filter { if case .moveTo = $0 { return true }; return false }.count
-    #expect(moveCount == 3)
+    #expect(moveCount == 2)
 }
 
 @Test @MainActor func pipelineRightHandDoesNotClickEvenOnPinch() async throws {
@@ -489,6 +489,113 @@ private func leftHandWithIndex(at tip: CGPoint) -> HandReading {
     h.module.handleReadings([reading(.right, .shaka)])
 
     #expect(h.keyboard.calls.isEmpty)
+}
+
+// MARK: - Per-gesture enable toggles
+
+@Test @MainActor func pipelineDisabledClickDoesNotCallCursor() async throws {
+    let h = Harness.make()
+    h.module.clickEnabled = false
+    try await h.module.start()
+
+    h.module.handleReadings([reading(.left, .pinch)])
+
+    let clickCount = h.cursor.calls.filter {
+        if case .leftClick = $0 { return true }; return false
+    }.count
+    #expect(clickCount == 0)
+}
+
+@Test @MainActor func pipelineDisabledDragDoesNotPressMouseDown() async throws {
+    let h = Harness.make()
+    h.module.dragEnabled = false
+    try await h.module.start()
+
+    h.module.handleReadings([reading(.left, .fist)])
+
+    let downCount = h.cursor.calls.filter {
+        if case .leftMouseDown = $0 { return true }; return false
+    }.count
+    #expect(downCount == 0)
+}
+
+@Test @MainActor func pipelineDisabledScrollDoesNotCallScroll() async throws {
+    let h = Harness.make()
+    h.module.scrollEnabled = false
+    try await h.module.start()
+
+    // Trace a full CCW circle — router emits .scroll actions, dispatch
+    // must swallow them.
+    let center = CGPoint(x: 0.5, y: 0.5)
+    let radius = 0.08
+    for i in 0..<24 {
+        let angle = 2.0 * .pi * Double(i) / 23.0
+        let tip = CGPoint(
+            x: center.x + CGFloat(radius * cos(angle)),
+            y: center.y + CGFloat(radius * sin(angle))
+        )
+        h.module.handleReadings([leftHandWithIndex(at: tip)])
+        try await Task.sleep(for: .milliseconds(20))
+    }
+
+    let scrolls = h.cursor.calls.filter {
+        if case .scroll = $0 { return true }; return false
+    }
+    #expect(scrolls.isEmpty)
+}
+
+@Test @MainActor func pipelineDisabledMissionControlDoesNotPressCtrlUp() async throws {
+    let h = Harness.make()
+    h.module.missionControlEnabled = false
+    try await h.module.start()
+
+    h.module.handleReadings([reading(.right, .fist)])
+    try await Task.sleep(for: .milliseconds(450))
+    h.module.handleReadings([reading(.right, .fist)])
+
+    let hasCtrlUp = h.keyboard.calls.contains { call in
+        if case .press(let keyCode, _) = call {
+            return keyCode == 0x7E
+        }
+        return false
+    }
+    #expect(hasCtrlUp == false)
+}
+
+@Test @MainActor func pipelineDisabledAppSwitcherDoesNotPressCmdTab() async throws {
+    let h = Harness.make()
+    h.module.appSwitcherEnabled = false
+    try await h.module.start()
+
+    h.module.handleReadings([reading(.left, .none)])
+    h.module.handleReadings([reading(.left, .shaka)])
+
+    let hasCmdTab = h.keyboard.calls.contains { call in
+        if case .press(let keyCode, _) = call {
+            return keyCode == 0x30
+        }
+        return false
+    }
+    #expect(hasCmdTab == false)
+}
+
+@Test @MainActor func pipelineCursorMovementIsNotToggleable() async throws {
+    // Cursor movement is the core function and has no flag. Verify it
+    // still fires regardless of any other toggle state.
+    let h = Harness.make()
+    h.module.clickEnabled = false
+    h.module.dragEnabled = false
+    h.module.scrollEnabled = false
+    h.module.missionControlEnabled = false
+    h.module.appSwitcherEnabled = false
+    try await h.module.start()
+
+    h.module.handleReadings([reading(.right, .pointing, wrist: CGPoint(x: 0.4, y: 0.3))])
+
+    let moveCount = h.cursor.calls.filter {
+        if case .moveTo = $0 { return true }; return false
+    }.count
+    #expect(moveCount == 1)
 }
 
 // MARK: - Hand disappearance
