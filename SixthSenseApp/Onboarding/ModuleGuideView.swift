@@ -236,10 +236,12 @@ struct ModuleGuideView: View {
 
     private func gestureColor(for index: Int) -> Color {
         switch index {
-        case 0: return .cyan
-        case 1: return .pink
-        case 2: return .orange
-        case 3: return .purple
+        case 0: return .cyan    // Mover cursor
+        case 1: return .pink    // Clicar
+        case 2: return .orange  // Arrastar
+        case 3: return .purple  // Rolar
+        case 4: return .mint    // Mission Control
+        case 5: return .yellow  // Trocar app
         default: return .blue
         }
     }

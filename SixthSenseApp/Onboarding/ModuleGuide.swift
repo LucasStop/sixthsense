@@ -92,7 +92,7 @@ extension ModuleGuide {
             ),
             GuideStep(
                 id: 4,
-                title: "Aprenda os 3 gestos",
+                title: "Aprenda os 6 gestos",
                 description: "No Modo Treinamento você vê os pontos detectados em tempo real sobre a câmera. Pratique cada gesto observando a legenda acesa no canto.",
                 icon: "hand.raised.fingers.spread"
             ),
