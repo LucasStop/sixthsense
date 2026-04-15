@@ -602,14 +602,67 @@ private func simulateLeftIndexPath(
 
     let t0 = Date()
     _ = router.process(left: nil, right: rightFist, now: t0)
-    // 450ms later, past the 400ms hold threshold.
+    // 300ms later, past the 250ms hold threshold.
     let actions = router.process(
         left: nil,
         right: rightFist,
-        now: t0.addingTimeInterval(0.45)
+        now: t0.addingTimeInterval(0.3)
     )
 
     #expect(actions.contains { if case .missionControl = $0 { return true }; return false })
+}
+
+@Test func rightFistSurvivesBriefClassifierFlaps() {
+    // The real-world case that was killing Mission Control: the user
+    // holds a right fist but Vision drops the classification for a
+    // frame or two mid-hold. Without the grace period, each flap to
+    // .none resets rightFistEnteredAt and the hold never completes.
+    // With the grace period, short drops are treated as noise.
+    var router = HandActionRouter()
+    let rightFist = reading(chirality: .right, gesture: .fist)
+    let rightNone = reading(chirality: .right, gesture: .none)
+
+    let t0 = Date()
+    // Frame 1: fist at t0.
+    _ = router.process(left: nil, right: rightFist, now: t0)
+    // Frame 2 at t0+50ms: brief noise drop. Inside the 150ms grace
+    // window, so the hold timer is preserved.
+    _ = router.process(left: nil, right: rightNone, now: t0.addingTimeInterval(0.05))
+    // Frame 3 at t0+100ms: fist returns.
+    _ = router.process(left: nil, right: rightFist, now: t0.addingTimeInterval(0.1))
+    // Frame 4 at t0+280ms: past the 250ms hold threshold. MUST fire.
+    let actions = router.process(
+        left: nil,
+        right: rightFist,
+        now: t0.addingTimeInterval(0.28)
+    )
+
+    #expect(actions.contains { if case .missionControl = $0 { return true }; return false })
+}
+
+@Test func rightFistRealReleaseBeyondGraceResetsHold() {
+    // Sanity check: if the right hand stays NOT-fist longer than the
+    // grace period, the hold really does reset. This prevents the
+    // grace window from becoming a memory leak where any old fist
+    // still counts forever.
+    var router = HandActionRouter()
+    let rightFist = reading(chirality: .right, gesture: .fist)
+    let rightNone = reading(chirality: .right, gesture: .none)
+
+    let t0 = Date()
+    // Start a fist hold.
+    _ = router.process(left: nil, right: rightFist, now: t0)
+    // Release for 300ms — well past the 150ms grace period.
+    _ = router.process(left: nil, right: rightNone, now: t0.addingTimeInterval(0.3))
+    // Re-enter the fist. The hold should be starting fresh, so a
+    // single frame 50ms later must NOT fire.
+    let actions = router.process(
+        left: nil,
+        right: rightFist,
+        now: t0.addingTimeInterval(0.35)
+    )
+
+    #expect(actions.contains { if case .missionControl = $0 { return true }; return false } == false)
 }
 
 @Test func rightFistHeldDoesNotRepeatMissionControl() {
@@ -633,15 +686,17 @@ private func simulateLeftIndexPath(
 
     let t0 = Date()
     _ = router.process(left: nil, right: rightFist, now: t0)
-    _ = router.process(left: nil, right: rightFist, now: t0.addingTimeInterval(0.45))
-    // Release the fist.
+    _ = router.process(left: nil, right: rightFist, now: t0.addingTimeInterval(0.3))
+    // Release the fist — hold for longer than the 150ms grace window
+    // so the state really clears (this is a real release, not noise).
     _ = router.process(left: nil, right: rightOpen, now: t0.addingTimeInterval(0.5))
+    _ = router.process(left: nil, right: rightOpen, now: t0.addingTimeInterval(1.0))
     // Re-enter after the debounce window (1s) expires.
-    _ = router.process(left: nil, right: rightFist, now: t0.addingTimeInterval(1.2))
+    _ = router.process(left: nil, right: rightFist, now: t0.addingTimeInterval(1.3))
     let actions = router.process(
         left: nil,
         right: rightFist,
-        now: t0.addingTimeInterval(1.65)
+        now: t0.addingTimeInterval(1.6)
     )
 
     #expect(actions.contains { if case .missionControl = $0 { return true }; return false })

@@ -77,9 +77,17 @@ public struct HandActionRouter: Sendable {
     public var appSwitcherDebounce: TimeInterval = 0.35
 
     /// How long the right hand must be held in a fist pose before
-    /// Mission Control fires. Long enough to reject transient
-    /// misclassifications, short enough to feel responsive.
-    public var missionControlHoldDuration: TimeInterval = 0.4
+    /// Mission Control fires. Kept short so the user doesn't feel like
+    /// they're holding forever — the noise immunity comes from the
+    /// grace period below, not from a long hold.
+    public var missionControlHoldDuration: TimeInterval = 0.25
+
+    /// When the right hand flaps briefly out of `.fist` (single-frame
+    /// misclassification), we treat the hold as still alive if the
+    /// last fist observation was less than this long ago. Without this,
+    /// Vision dropping confidence on one frame resets the whole hold
+    /// and the user can never build up enough sustained time.
+    public var rightFistGracePeriod: TimeInterval = 0.15
 
     /// Minimum time between successive Mission Control triggers. Blocks
     /// re-fires from the same continuous hold — the user has to
@@ -109,6 +117,12 @@ public struct HandActionRouter: Sendable {
     /// when the right hand is not currently in a fist. Used to compute
     /// the hold duration before Mission Control fires.
     private var rightFistEnteredAt: Date?
+
+    /// Timestamp of the most recent frame where the right hand was
+    /// classified as a fist. We use the gap between this and `now` to
+    /// decide whether a brief non-fist frame is classifier noise (keep
+    /// the hold alive) or a real release (reset the hold).
+    private var rightFistLastSeenAt: Date?
 
     /// Whether Mission Control has already fired for the current
     /// continuous fist hold. Clears when the right hand leaves the
@@ -183,32 +197,43 @@ public struct HandActionRouter: Sendable {
         // at the pre-fist location, so click/drag targets keep aiming
         // at the spot the user was pointing at before closing their fist.
 
-        // Right fist held → Mission Control. Fires once after the user
-        // holds a right-hand fist for `missionControlHoldDuration`, then
-        // waits for the fist to be released before it can fire again.
-        // The hold requirement rejects transient misclassifications
-        // (e.g. a brief frame of fist in the middle of a pointing
-        // sequence). A debounce layered on top prevents rapid re-fires
-        // even across hold/release cycles.
-        if let right, right.gesture == .fist {
+        // Right fist held → Mission Control. The hold is robust against
+        // brief classifier drops: if the right hand flaps to something
+        // other than `.fist` for less than `rightFistGracePeriod`, we
+        // keep the hold alive. Only a sustained release (≥ grace period
+        // with no fist frame) clears the timer. This fixes the case
+        // where Vision loses confidence on the fingertips mid-hold.
+        let rightIsFist = right?.gesture == .fist
+        if rightIsFist {
             if rightFistEnteredAt == nil {
                 rightFistEnteredAt = now
             }
-            let heldFor = now.timeIntervalSince(rightFistEnteredAt ?? now)
-            if heldFor >= missionControlHoldDuration && !rightFistFired {
-                let longEnough = lastMissionControlTime
-                    .map { now.timeIntervalSince($0) >= missionControlDebounce } ?? true
-                if longEnough {
-                    actions.append(.missionControl)
-                    lastMissionControlTime = now
-                    rightFistFired = true
-                }
-            }
+            rightFistLastSeenAt = now
+        } else if let lastSeen = rightFistLastSeenAt,
+                  now.timeIntervalSince(lastSeen) < rightFistGracePeriod {
+            // Still inside the grace window — the non-fist frame is
+            // treated as noise; keep the hold alive untouched.
         } else {
-            // Right hand left the fist pose (or disappeared) — reset
-            // the hold clock so the next entry starts fresh.
+            // Real release (or never engaged). Reset everything.
             rightFistEnteredAt = nil
+            rightFistLastSeenAt = nil
             rightFistFired = false
+        }
+
+        // After updating the timers, check whether we crossed the hold
+        // threshold on this frame. This runs regardless of the current
+        // frame's pose so a noise frame inside the grace window still
+        // lets us fire as soon as the hold matures.
+        if let start = rightFistEnteredAt,
+           !rightFistFired,
+           now.timeIntervalSince(start) >= missionControlHoldDuration {
+            let longEnough = lastMissionControlTime
+                .map { now.timeIntervalSince($0) >= missionControlDebounce } ?? true
+            if longEnough {
+                actions.append(.missionControl)
+                lastMissionControlTime = now
+                rightFistFired = true
+            }
         }
 
         // Left hand → drag (fist) + click (pinch) + scroll (circle) +
