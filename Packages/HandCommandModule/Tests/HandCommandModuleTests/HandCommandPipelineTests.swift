@@ -11,11 +11,16 @@ import SharedServicesMocks
 //
 // End-to-end tests for the HandCommand pipeline.
 //
-// Current gesture set:
-//   • Right hand   — moves the cursor using the smoothed index tip.
+// Mental model: "direita clica, esquerda arrasta e rola."
+//
+// Gesture set:
+//   • Right hand   — drives the cursor using the smoothed index tip.
+//   • Right pinch  — click at the last known cursor position.
 //   • Right shaka  — fires Mission Control (edge-triggered).
 //   • Left pinch   — click at the last known cursor position.
 //   • Left fist    — drag (dragBegin on entry, dragEnd on release).
+//                    The right hand keeps driving the cursor during
+//                    the drag, so the drag can span the screen.
 //   • Left circle  — scroll wheel pulses.
 //   • Left shaka   — app switcher (Cmd+Tab).
 //
@@ -133,24 +138,39 @@ private func reading(_ chirality: HandChirality, _ gesture: DetectedHandGesture,
     h.module.handleReadings([reading(.right, .pointing, wrist: CGPoint(x: 0.4, y: 0.3))])
     // Open hand — moves cursor.
     h.module.handleReadings([reading(.right, .openHand, wrist: CGPoint(x: 0.5, y: 0.3))])
-    // Fist — cursor FREEZES (stability guard against classifier noise),
-    // so this frame must not emit a new moveTo.
+    // Fist — non cursor-friendly pose, cursor FREEZES at last position.
+    // No drag is fired because drag is left-hand only.
     h.module.handleReadings([reading(.right, .fist, wrist: CGPoint(x: 0.6, y: 0.3))])
 
     let moveCount = h.cursor.calls.filter { if case .moveTo = $0 { return true }; return false }.count
     #expect(moveCount == 2)
 }
 
-@Test @MainActor func pipelineRightHandDoesNotClickEvenOnPinch() async throws {
+@Test @MainActor func pipelineRightPinchFiresClick() async throws {
+    // Symmetric dispatch: right pinch edge-trigger produces a click
+    // just like left pinch. A non-pinch frame first so the edge
+    // detection sees a real transition.
     let h = Harness.make()
     try await h.module.start()
 
+    h.module.handleReadings([reading(.right, .pointing)])
     h.module.handleReadings([reading(.right, .pinch)])
-    h.module.handleReadings([reading(.right, .none)])
+
+    let clicked = h.cursor.calls.contains { if case .leftClick = $0 { return true }; return false }
+    #expect(clicked == true)
+}
+
+@Test @MainActor func pipelineRightPinchHeldDoesNotSpamClicks() async throws {
+    let h = Harness.make()
+    try await h.module.start()
+
+    h.module.handleReadings([reading(.right, .pointing)])
+    h.module.handleReadings([reading(.right, .pinch)])
+    h.module.handleReadings([reading(.right, .pinch)])
     h.module.handleReadings([reading(.right, .pinch)])
 
     let clickCount = h.cursor.calls.filter { if case .leftClick = $0 { return true }; return false }.count
-    #expect(clickCount == 0)
+    #expect(clickCount == 1)
 }
 
 // MARK: - Left hand — click
@@ -389,9 +409,10 @@ private func leftHandWithIndex(at tip: CGPoint) -> HandReading {
     #expect(upCount == 1)
 }
 
-// MARK: - Right fist still does nothing
+// MARK: - Right hand restrictions (drag and scroll are left-only)
 
 @Test @MainActor func pipelineRightFistDoesNotDrag() async throws {
+    // Drag is left-hand only. A right fist must not fire leftMouseDown.
     let h = Harness.make()
     try await h.module.start()
 
@@ -402,6 +423,7 @@ private func leftHandWithIndex(at tip: CGPoint) -> HandReading {
 }
 
 @Test @MainActor func pipelineRightOpenHandDoesNotScroll() async throws {
+    // Static open hand (no circular motion) must not fire scroll.
     let h = Harness.make()
     try await h.module.start()
 
@@ -502,14 +524,17 @@ private func leftHandWithIndex(at tip: CGPoint) -> HandReading {
     #expect(movesAfterRelease == 4, "Cursor must resume moving after shaka is released")
 }
 
-@Test @MainActor func pipelineRightFistDoesNotStartDrag() async throws {
+@Test @MainActor func pipelineRightFistNeverPressesMouseDown() async throws {
+    // Cycling through fist and release with the right hand must never
+    // produce leftMouseDown — drag belongs to the left hand only.
     let h = Harness.make()
     try await h.module.start()
 
     h.module.handleReadings([reading(.right, .fist)])
+    h.module.handleReadings([reading(.right, .openHand)])
+    h.module.handleReadings([reading(.right, .fist)])
+    h.module.handleReadings([reading(.right, .openHand)])
 
-    // The mouse must NOT have received a leftMouseDown — the right-fist
-    // pose is a keyboard shortcut, never a drag.
     let downCount = h.cursor.calls.filter {
         if case .leftMouseDown = $0 { return true }; return false
     }.count

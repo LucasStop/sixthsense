@@ -83,9 +83,12 @@ private func reading(
     #expect(actions.contains { if case .moveCursor = $0 { return true }; return false } == false)
 }
 
-@Test func rightFistDoesNotClobberLastKnownCursorPosition() {
-    // The last pre-fist cursor position must be preserved so click/drag
-    // anchors still point at the spot the user was aiming at.
+@Test func rightShakaDoesNotClobberLastKnownCursorPosition() {
+    // The last pre-action cursor position must be preserved so that
+    // a click from the OTHER hand still anchors at the spot the user
+    // was aiming at, not at wherever the action-pose hand's index
+    // happens to be. Right shaka is chosen because it does not start
+    // a drag (fist would start one, suppressing the click).
     var router = HandActionRouter()
 
     // Pointing establishes cursor at (0.4, 0.6).
@@ -96,18 +99,18 @@ private func reading(
     )
     _ = router.process(left: nil, right: pointing)
 
-    // Fist frame with a very different index tip position.
-    let fist = reading(
+    // Shaka frame with a very different index tip position.
+    let shaka = reading(
         chirality: .right,
-        gesture: .fist,
+        gesture: .shaka,
         landmarks: landmarks(index: CGPoint(x: 0.05, y: 0.05))
     )
-    _ = router.process(left: nil, right: fist)
+    _ = router.process(left: nil, right: shaka)
 
     // Now a left pinch — the click target should still be (0.4, 0.6),
-    // not the fist-time index position.
+    // not the shaka-time index position.
     let leftPinch = reading(chirality: .left, gesture: .pinch)
-    let actions = router.process(left: leftPinch, right: fist)
+    let actions = router.process(left: leftPinch, right: shaka)
 
     let clickPoint: CGPoint? = actions.compactMap { action in
         if case .click(let p) = action { return p }
@@ -136,25 +139,69 @@ private func reading(
     #expect(movedTo?.y == 0.456)
 }
 
-@Test func rightHandDoesNotEmitClickOnPinch() {
-    // Clicks only come from the LEFT hand in the simplified routing.
+@Test func rightPinchEmitsClickAtLastKnownCursorPosition() {
+    // Right pinch fires click anchored at the last known cursor
+    // position, letting the user click with the same hand they're
+    // pointing with.
     var router = HandActionRouter()
+
+    // Establish cursor at (0.4, 0.6) via pointing.
+    let pointing = reading(
+        chirality: .right,
+        gesture: .pointing,
+        landmarks: landmarks(index: CGPoint(x: 0.4, y: 0.6))
+    )
+    _ = router.process(left: nil, right: pointing)
+
+    // Transition right to pinch — click must fire at (0.4, 0.6).
     let pinch = reading(chirality: .right, gesture: .pinch)
     let actions = router.process(left: nil, right: pinch)
-    #expect(actions.contains { if case .click = $0 { return true }; return false } == false)
+
+    let clickPoint: CGPoint? = actions.compactMap { action in
+        if case .click(let p) = action { return p }
+        return nil
+    }.first
+    #expect(clickPoint?.x == 0.4)
+    #expect(clickPoint?.y == 0.6)
 }
 
-@Test func rightHandDoesNotEmitDragOrScroll() {
+@Test func rightFistDoesNotStartADrag() {
+    // Drag is left-hand only. Right fist is a no-op (cursor freezes
+    // because fist is not a cursor-friendly pose, but no drag fires).
     var router = HandActionRouter()
     let fist = reading(chirality: .right, gesture: .fist)
-    let openHand = reading(chirality: .right, gesture: .openHand)
 
-    let a1 = router.process(left: nil, right: fist)
-    let a2 = router.process(left: nil, right: openHand)
+    let actions = router.process(left: nil, right: fist)
 
-    #expect(a1.contains { if case .dragBegin = $0 { return true }; return false } == false)
-    #expect(a1.contains { if case .scroll = $0 { return true }; return false } == false)
-    #expect(a2.contains { if case .scroll = $0 { return true }; return false } == false)
+    #expect(actions.contains { if case .dragBegin = $0 { return true }; return false } == false)
+    #expect(router.isDragging == false)
+}
+
+@Test func rightCircularMotionDoesNotScroll() {
+    // Scroll is left-hand only so a right-hand circle never drags
+    // the cursor around the screen.
+    var router = HandActionRouter()
+
+    // Trace a circle with the right index tip across ~8 frames.
+    let center = CGPoint(x: 0.5, y: 0.5)
+    let radius: CGFloat = 0.12
+    let t0 = Date()
+    var any: [HandAction] = []
+    for i in 0..<24 {
+        let angle = Double(i) * (2 * .pi / 12)
+        let tip = CGPoint(
+            x: center.x + CGFloat(cos(angle)) * radius,
+            y: center.y + CGFloat(sin(angle)) * radius
+        )
+        let r = reading(
+            chirality: .right,
+            gesture: .pointing,
+            landmarks: landmarks(index: tip)
+        )
+        any += router.process(left: nil, right: r, now: t0.addingTimeInterval(Double(i) * 0.04))
+    }
+
+    #expect(any.contains { if case .scroll = $0 { return true }; return false } == false)
 }
 
 // MARK: - Left hand → click
@@ -717,15 +764,34 @@ private func simulateLeftIndexPath(
     #expect(actions.contains { if case .missionControl = $0 { return true }; return false })
 }
 
-@Test func rightFistDoesNotStartADrag() {
+@Test func leftPointingDoesNotDriveCursor() {
+    // Cursor is right-hand exclusive. Even when the right hand is in
+    // an action pose, the left hand pointing does NOT take over —
+    // the cursor just freezes at its last known position.
     var router = HandActionRouter()
-    let rightFist = reading(chirality: .right, gesture: .fist)
 
-    let actions = router.process(left: nil, right: rightFist)
+    // First establish cursor at (0.7, 0.2) via right pointing.
+    let rightPointing = reading(
+        chirality: .right,
+        gesture: .pointing,
+        landmarks: landmarks(index: CGPoint(x: 0.7, y: 0.2))
+    )
+    _ = router.process(left: nil, right: rightPointing)
 
-    // Right-hand fist is a keyboard shortcut, never a drag.
-    #expect(actions.contains { if case .dragBegin = $0 { return true }; return false } == false)
-    #expect(router.isDragging == false)
+    // Now right goes to shaka while left starts pointing at a very
+    // different location. Cursor must NOT move to the left's position.
+    let leftPointing = reading(
+        chirality: .left,
+        gesture: .pointing,
+        landmarks: landmarks(index: CGPoint(x: 0.1, y: 0.9))
+    )
+    let rightShaka = reading(chirality: .right, gesture: .shaka)
+    let actions = router.process(left: leftPointing, right: rightShaka)
+
+    let hasMove = actions.contains {
+        if case .moveCursor = $0 { return true }; return false
+    }
+    #expect(hasMove == false, "Left hand must not take cursor control")
 }
 
 @Test func leftFistStillDragsWhenRightIsFistToo() {

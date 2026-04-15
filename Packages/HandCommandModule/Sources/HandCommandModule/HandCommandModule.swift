@@ -12,11 +12,20 @@ import SharedServices
 // MARK: - HandCommand Module
 
 /// Tracks both of the user's hands via the webcam and translates gestures
-/// into real desktop actions:
+/// into real desktop actions. Mental model: "direita clica, esquerda
+/// arrasta e rola."
 ///
-///   • Right hand: cursor movement (index tip), Mission Control (shaka).
-///   • Left  hand: click (pinch), drag (fist), scroll (circular motion),
-///                 app switcher ⌘+Tab (shaka).
+///   • Cursor       — right hand index tip (cursor freezes when the
+///                    right hand goes to an action pose).
+///   • Click        — either hand pinch (edge-triggered, per-hand
+///                    debounce). Useful redundancy for fast alternating
+///                    clicks.
+///   • Drag         — left hand fist. The right hand keeps driving
+///                    the cursor so the drag can span the screen.
+///   • Scroll       — left hand tracing a circle in the air. Keeps the
+///                    cursor free from being dragged around the screen.
+///   • Mission Ctrl — right hand shaka (edge-triggered).
+///   • ⌘+Tab        — left hand shaka (edge-triggered).
 ///
 /// Pure classification and action routing live in `HandGestureClassifier`
 /// and `HandActionRouter` (both in SixthSenseCore), so the Vision/CGEvent

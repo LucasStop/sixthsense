@@ -498,13 +498,13 @@ struct HandTrainingView: View {
                     legendItem(icon: "hand.point.up.left", color: .cyan,
                                label: "Mover cursor", description: "Mão direita aponta")
                     legendItem(icon: "hand.pinch", color: .pink,
-                               label: "Clicar", description: "Mão esquerda faz pinça")
+                               label: "Clicar", description: "Pinça com a direita (ou esquerda)")
                 }
                 HStack(alignment: .top, spacing: 14) {
                     legendItem(icon: "hand.raised.fill", color: .orange,
-                               label: "Arrastar", description: "Mão esquerda fecha o punho")
+                               label: "Arrastar", description: "Mão esquerda em punho")
                     legendItem(icon: "arrow.triangle.2.circlepath", color: .purple,
-                               label: "Rolar", description: "Traçar círculo no ar com a esquerda")
+                               label: "Rolar", description: "Círculo no ar com a esquerda")
                 }
                 HStack(alignment: .top, spacing: 14) {
                     legendItem(icon: "rectangle.on.rectangle", color: .mint,

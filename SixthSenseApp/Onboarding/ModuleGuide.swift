@@ -49,10 +49,11 @@ extension ModuleGuide {
         tagline: "Controle o Mac com gestos",
         overview: """
         O HandCommand usa a câmera frontal do seu Mac para rastrear as duas \
-        mãos em tempo real. A mão direita controla o cursor pelo dedo \
-        indicador, e a mão esquerda dispara ações como clicar e arrastar. \
-        Toda a detecção roda localmente no seu Mac — nenhum dado sai do \
-        dispositivo.
+        mãos em tempo real. Mental model simples: "direita clica, esquerda \
+        arrasta e rola". A direita é o mouse completo (cursor + click + \
+        Mission Control), e a esquerda adiciona o que precisa do cursor \
+        livre ou das duas mãos (drag, scroll, Cmd+Tab). Toda a detecção \
+        roda localmente no seu Mac — nenhum dado sai do dispositivo.
         """,
         requirements: [
             GuideRequirement(
@@ -108,25 +109,25 @@ extension ModuleGuide {
                 name: "Mover cursor",
                 icon: "hand.point.up.left",
                 action: "Mão direita",
-                howTo: "Estenda o dedo indicador na direção da tela. O cursor segue a ponta do indicador em tempo real."
+                howTo: "Estenda o dedo indicador da mão direita na direção da tela. O cursor segue a ponta do indicador em tempo real. Quando a direita entra em um gesto de ação (pinça, shaka), o cursor congela no último ponto — a esquerda nunca assume o cursor."
             ),
             GestureInfo(
                 name: "Clicar",
                 icon: "hand.pinch",
-                action: "Mão esquerda",
-                howTo: "Junte a ponta do polegar com a ponta do indicador da mão esquerda. Um clique dispara exatamente onde o cursor estiver."
+                action: "Mão direita (ou esquerda)",
+                howTo: "Junte a ponta do polegar com a ponta do indicador. O clique dispara exatamente onde o cursor estiver. Pode ser feito com qualquer mão — cada uma tem seu próprio debounce, então você pode fazer clicks alternados rápidos. O cursor congela durante a pinça da direita para o click ancorar precisamente."
             ),
             GestureInfo(
                 name: "Arrastar",
                 icon: "hand.raised.fill",
                 action: "Mão esquerda",
-                howTo: "Feche o punho da mão esquerda para segurar. Enquanto o punho estiver fechado, a direita arrasta o que estiver sob o cursor. Abra a mão para soltar."
+                howTo: "Feche o punho da mão esquerda para segurar. Enquanto o punho estiver fechado, a direita continua movendo o cursor normalmente, e você arrasta o que estiver sob ele. Abra o punho esquerdo para soltar. O arraste é bimanual por design — uma mão só não consegue segurar e mover ao mesmo tempo."
             ),
             GestureInfo(
                 name: "Rolar",
                 icon: "arrow.triangle.2.circlepath",
                 action: "Mão esquerda",
-                howTo: "Trace um círculo no ar com o dedo indicador esquerdo, como se girasse uma roda de scroll invisível. Sentido anti-horário rola para cima; sentido horário rola para baixo. A velocidade do giro controla a velocidade da rolagem — quanto mais rápido você girar, mais rápido a página passa."
+                howTo: "Trace um círculo no ar com o dedo indicador esquerdo, como se girasse uma roda de scroll invisível. Sentido anti-horário rola para cima; sentido horário rola para baixo. A velocidade do giro controla a velocidade da rolagem. Scroll é exclusivo da esquerda porque tracejar um círculo com a direita arrastaria o cursor junto."
             ),
             GestureInfo(
                 name: "Mission Control",
