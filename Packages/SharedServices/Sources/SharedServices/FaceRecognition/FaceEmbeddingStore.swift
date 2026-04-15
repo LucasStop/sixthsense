@@ -2,57 +2,16 @@ import Foundation
 @preconcurrency import Vision
 import SixthSenseCore
 
-// MARK: - Enrolled Face Print
-
-/// One capture from the guided enrollment flow: a Vision feature print
-/// bundled with the head pose that produced it. Recognition uses the
-/// pose to pick only the closest stored prints to compare against, so
-/// an intruder has to match the user at the CURRENT angle instead of
-/// just at any one of the nine enrollment angles.
-public struct EnrolledFacePrint: Sendable {
-    public let print: VNFeaturePrintObservation
-    public let pose: FaceAngle
-
-    public init(print: VNFeaturePrintObservation, pose: FaceAngle) {
-        self.print = print
-        self.pose = pose
-    }
-}
-
-// MARK: - Enrollment Payload (persisted on disk)
-
-/// Everything we save to disk for a completed enrollment: the feature
-/// prints, their per-capture pose tags, and the calibration numbers
-/// derived from the pairwise distances across the enrollment set.
-///
-/// The prints themselves are Foundation objects and travel through
-/// `NSKeyedArchiver`; poses and calibration are plain values encoded
-/// as JSON. We glue them together with a single enrollment-version
-/// byte so the loader can cleanly reject old formats.
-private struct EnrollmentPayload: Codable {
-    let version: Int
-    let poses: [FaceAnglePayload]
-    let calibration: FaceRecognitionCalibration
-    let printsArchive: Data
-
-    struct FaceAnglePayload: Codable {
-        let yaw: Double
-        let pitch: Double
-
-        init(_ angle: FaceAngle) {
-            self.yaw = angle.yaw
-            self.pitch = angle.pitch
-        }
-
-        var angle: FaceAngle { FaceAngle(yaw: yaw, pitch: pitch) }
-    }
-}
-
 // MARK: - Face Embedding Store
 
-/// Persists the user's enrolled face as a bundle of pose-tagged feature
-/// prints plus the per-user recognition calibration. Also persists the
-/// selected `FaceLockMode` in UserDefaults.
+/// Persists the user's enrolled face as a set of `VNFeaturePrintObservation`
+/// blobs in Application Support. Also persists the selected `FaceLockMode`
+/// in UserDefaults.
+///
+/// We store multiple embeddings (one per captured frame) rather than a
+/// single averaged one — comparison is done against all of them and the
+/// smallest distance wins. This gives better robustness to small pose
+/// variations without any averaging heuristics.
 public final class FaceEmbeddingStore: @unchecked Sendable {
 
     // MARK: - UserDefaults keys
@@ -61,10 +20,6 @@ public final class FaceEmbeddingStore: @unchecked Sendable {
         static let lockMode = "com.lucasstop.sixthsense.faceLock.mode"
         static let enrolledAt = "com.lucasstop.sixthsense.faceLock.enrolledAt"
     }
-
-    /// Bump whenever the on-disk format changes. Older payloads are
-    /// treated as missing enrollment and the user is asked to re-enroll.
-    private static let currentFormatVersion = 2
 
     private let defaults: UserDefaults
     private let fileManager: FileManager
@@ -119,59 +74,34 @@ public final class FaceEmbeddingStore: @unchecked Sendable {
 
     // MARK: - Save / Load
 
-    /// Save a complete enrollment (pose-tagged prints + calibration).
-    /// Overwrites any previous enrollment.
-    public func save(
-        prints: [EnrolledFacePrint],
-        calibration: FaceRecognitionCalibration
-    ) throws {
+    /// Saves an array of feature prints as the enrolled face. Overwrites
+    /// any previous enrollment.
+    public func save(embeddings: [VNFeaturePrintObservation]) throws {
         guard let url = enrollmentFileURL else {
             throw FaceEmbeddingStoreError.unavailableDirectory
         }
-
-        let visionPrints = prints.map(\.print)
-        let printsArchive = try NSKeyedArchiver.archivedData(
-            withRootObject: visionPrints,
+        let archived = try NSKeyedArchiver.archivedData(
+            withRootObject: embeddings,
             requiringSecureCoding: true
         )
-
-        let payload = EnrollmentPayload(
-            version: Self.currentFormatVersion,
-            poses: prints.map { EnrollmentPayload.FaceAnglePayload($0.pose) },
-            calibration: calibration,
-            printsArchive: printsArchive
-        )
-
-        let encoded = try JSONEncoder().encode(payload)
-        try encoded.write(to: url, options: [.atomic])
+        try archived.write(to: url, options: [.atomic])
         defaults.set(Date(), forKey: DefaultsKey.enrolledAt)
     }
 
-    /// Load previously enrolled pose-tagged prints. Returns `nil` if no
-    /// enrollment exists or the file is in an older / corrupt format.
-    public func load() -> (prints: [EnrolledFacePrint], calibration: FaceRecognitionCalibration)? {
+    /// Loads previously enrolled feature prints, or `nil` if none exists.
+    public func loadEmbeddings() -> [VNFeaturePrintObservation]? {
         guard let url = enrollmentFileURL,
               fileManager.fileExists(atPath: url.path),
               let data = try? Data(contentsOf: url) else {
             return nil
         }
-
-        guard let payload = try? JSONDecoder().decode(EnrollmentPayload.self, from: data),
-              payload.version == Self.currentFormatVersion else {
-            return nil
-        }
-
-        guard let visionPrints = try? NSKeyedUnarchiver.unarchivedArrayOfObjects(
+        guard let unarchived = try? NSKeyedUnarchiver.unarchivedArrayOfObjects(
             ofClass: VNFeaturePrintObservation.self,
-            from: payload.printsArchive
-        ), visionPrints.count == payload.poses.count else {
+            from: data
+        ) else {
             return nil
         }
-
-        let prints = zip(visionPrints, payload.poses).map { print, posePayload in
-            EnrolledFacePrint(print: print, pose: posePayload.angle)
-        }
-        return (prints, payload.calibration)
+        return unarchived
     }
 
     /// Removes the enrollment file and clears the lock mode back to disabled.
