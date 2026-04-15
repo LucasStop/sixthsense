@@ -128,6 +128,18 @@ extension ModuleGuide {
                 action: "Mão esquerda",
                 howTo: "Trace um círculo no ar com o dedo indicador esquerdo, como se girasse uma roda de scroll invisível. Sentido anti-horário rola para cima; sentido horário rola para baixo. A velocidade do giro controla a velocidade da rolagem — quanto mais rápido você girar, mais rápido a página passa."
             ),
+            GestureInfo(
+                name: "Mission Control",
+                icon: "rectangle.on.rectangle",
+                action: "Duas mãos",
+                howTo: "Feche os dois punhos ao mesmo tempo. O macOS abre o Mission Control (equivalente a Ctrl+↑ ou F3) mostrando todas as janelas e Spaces. Se você estava arrastando algo com o punho esquerdo, o drag é encerrado automaticamente ao entrar na pose — sem soltar item no meio do caminho."
+            ),
+            GestureInfo(
+                name: "Trocar app (⌘+Tab)",
+                icon: "square.on.square",
+                action: "Mão esquerda",
+                howTo: "Faça o gesto shaka (hang loose) com a mão esquerda: polegar e mindinho abertos, índice/médio/anelar dobrados. Cada vez que você entra na pose, o macOS cicla para o próximo app. Saia da pose e volte para cicar de novo — como se estivesse batendo Tab com o Cmd segurado."
+            ),
         ],
         tips: [
             "Mantenha as mãos entre 30 e 60 cm da câmera para detecção estável.",

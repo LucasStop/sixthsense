@@ -536,23 +536,141 @@ private func simulateLeftIndexPath(
     })
 }
 
+// MARK: - Both fists → Mission Control
+
+@Test func bothFistsEmitsMissionControlOnEdge() {
+    var router = HandActionRouter()
+    let leftFist  = reading(chirality: .left,  gesture: .fist)
+    let rightFist = reading(chirality: .right, gesture: .fist)
+
+    let actions = router.process(left: leftFist, right: rightFist)
+
+    #expect(actions.contains { if case .missionControl = $0 { return true }; return false })
+}
+
+@Test func bothFistsHeldDoesNotRepeatMissionControl() {
+    var router = HandActionRouter()
+    let leftFist  = reading(chirality: .left,  gesture: .fist)
+    let rightFist = reading(chirality: .right, gesture: .fist)
+
+    let t0 = Date()
+    _ = router.process(left: leftFist, right: rightFist, now: t0)
+    // Same pose held → must NOT fire again this frame.
+    let second = router.process(left: leftFist, right: rightFist, now: t0.addingTimeInterval(0.05))
+
+    #expect(second.contains { if case .missionControl = $0 { return true }; return false } == false)
+}
+
+@Test func bothFistsCancelsActiveDragBeforeFiring() {
+    var router = HandActionRouter()
+    let leftFist  = reading(chirality: .left,  gesture: .fist)
+    let rightFist = reading(chirality: .right, gesture: .fist)
+    let rightOpen = reading(chirality: .right, gesture: .openHand)
+
+    // Start a drag with left fist alone.
+    _ = router.process(left: leftFist, right: rightOpen)
+    #expect(router.isDragging == true)
+
+    // Right transitions into fist → Mission Control fires AND the
+    // drag is closed out cleanly with a dragEnd.
+    let actions = router.process(left: leftFist, right: rightFist)
+
+    #expect(actions.contains { if case .dragEnd = $0 { return true }; return false })
+    #expect(actions.contains { if case .missionControl = $0 { return true }; return false })
+    #expect(router.isDragging == false)
+}
+
+@Test func bothFistsDoesNotAlsoStartADrag() {
+    var router = HandActionRouter()
+    let leftFist  = reading(chirality: .left,  gesture: .fist)
+    let rightFist = reading(chirality: .right, gesture: .fist)
+
+    let actions = router.process(left: leftFist, right: rightFist)
+
+    // The left fist must NOT start a drag when the right is also fist;
+    // otherwise entering the pose would fire Mission Control AND drag.
+    #expect(actions.contains { if case .dragBegin = $0 { return true }; return false } == false)
+    #expect(router.isDragging == false)
+}
+
+@Test func missionControlFiresAgainAfterReleasingPose() {
+    var router = HandActionRouter()
+    let leftFist  = reading(chirality: .left,  gesture: .fist)
+    let rightFist = reading(chirality: .right, gesture: .fist)
+    let open      = reading(chirality: .right, gesture: .openHand)
+
+    let t0 = Date()
+    _ = router.process(left: leftFist, right: rightFist, now: t0)
+    // Release the pose (right opens).
+    _ = router.process(left: leftFist, right: open, now: t0.addingTimeInterval(0.05))
+    // Re-enter the pose AFTER the debounce.
+    let actions = router.process(left: leftFist, right: rightFist, now: t0.addingTimeInterval(1.0))
+
+    #expect(actions.contains { if case .missionControl = $0 { return true }; return false })
+}
+
+// MARK: - Left shaka → Cmd+Tab
+
+@Test func leftShakaEmitsAppSwitcher() {
+    var router = HandActionRouter()
+    let shaka = reading(chirality: .left, gesture: .shaka)
+
+    let actions = router.process(left: shaka, right: nil)
+
+    #expect(actions.contains { if case .appSwitcher = $0 { return true }; return false })
+}
+
+@Test func leftShakaHeldDoesNotRepeatAppSwitcher() {
+    var router = HandActionRouter()
+    let shaka = reading(chirality: .left, gesture: .shaka)
+
+    let t0 = Date()
+    _ = router.process(left: shaka, right: nil, now: t0)
+    let second = router.process(left: shaka, right: nil, now: t0.addingTimeInterval(0.05))
+
+    #expect(second.contains { if case .appSwitcher = $0 { return true }; return false } == false)
+}
+
+@Test func leftShakaAfterReleaseFiresAgain() {
+    var router = HandActionRouter()
+    let shaka = reading(chirality: .left, gesture: .shaka)
+    let none  = reading(chirality: .left, gesture: .none)
+
+    let t0 = Date()
+    _ = router.process(left: shaka, right: nil, now: t0)
+    _ = router.process(left: none,  right: nil, now: t0.addingTimeInterval(0.1))
+    let second = router.process(left: shaka, right: nil, now: t0.addingTimeInterval(0.5))
+
+    #expect(second.contains { if case .appSwitcher = $0 { return true }; return false })
+}
+
+@Test func rightShakaDoesNotEmitAppSwitcher() {
+    // Shaka is left-hand-only; right shaka must be ignored.
+    var router = HandActionRouter()
+    let rightShaka = reading(chirality: .right, gesture: .shaka)
+
+    let actions = router.process(left: nil, right: rightShaka)
+
+    #expect(actions.contains { if case .appSwitcher = $0 { return true }; return false } == false)
+}
+
 // MARK: - Reserved action cases (type-level)
 
 @Test func reservedActionCasesStillExist() {
-    // These cases are not emitted by the simplified router, but they
-    // remain in the enum so existing tests and future features can use
-    // them without reshaping the public surface.
+    // Cases wired up to actual dispatch logic today, plus the ones that
+    // remain reserved for future features without being emitted yet.
     let cases: [HandAction] = [
         .doubleClick(at: .zero),
         .dragBegin(at: .zero),
         .dragEnd(at: .zero),
         .scroll(deltaY: 0),
         .missionControl,
+        .appSwitcher,
         .showDesktop,
         .switchSpaceLeft,
         .switchSpaceRight,
         .holdCommand,
         .releaseCommand,
     ]
-    #expect(cases.count == 10)
+    #expect(cases.count == 11)
 }

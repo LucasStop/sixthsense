@@ -506,6 +506,12 @@ struct HandTrainingView: View {
                     legendItem(icon: "arrow.triangle.2.circlepath", color: .purple,
                                label: "Rolar", description: "Traçar círculo no ar com a esquerda")
                 }
+                HStack(alignment: .top, spacing: 14) {
+                    legendItem(icon: "rectangle.on.rectangle", color: .mint,
+                               label: "Mission Control", description: "Os dois punhos fechados")
+                    legendItem(icon: "square.on.square", color: .yellow,
+                               label: "Trocar app", description: "Shaka com a esquerda (⌘+Tab)")
+                }
             }
         }
     }

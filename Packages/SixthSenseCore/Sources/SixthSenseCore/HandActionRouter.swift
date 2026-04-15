@@ -16,12 +16,19 @@ public enum HandAction: Sendable, Equatable {
     case moveCursor(normalized: CGPoint)
     case click(at: CGPoint)
 
-    // Reserved for future use — not currently emitted by the router.
-    case doubleClick(at: CGPoint)
+    // Drag (left fist)
     case dragBegin(at: CGPoint)
     case dragEnd(at: CGPoint)
+
+    // Scroll (left circular motion)
     case scroll(deltaY: Int32)
+
+    // System shortcuts (both-fists / left-shaka)
     case missionControl
+    case appSwitcher
+
+    // Reserved for future use — not currently emitted by the router.
+    case doubleClick(at: CGPoint)
     case showDesktop
     case switchSpaceLeft
     case switchSpaceRight
@@ -63,6 +70,15 @@ public struct HandActionRouter: Sendable {
     /// second pinch is treated as detector noise, not a fresh click.
     public var clickDebounce: TimeInterval = 0.18
 
+    /// Minimum time between successive Cmd+Tab triggers. Shorter than
+    /// this and classifier flapping around the shaka pose would spam
+    /// the keyboard. 0.35s lets the user cycle apps at ~3 Hz when they
+    /// re-enter the pose, which matches typical Cmd+Tab usage.
+    public var appSwitcherDebounce: TimeInterval = 0.35
+
+    /// Minimum time between successive Mission Control triggers.
+    public var missionControlDebounce: TimeInterval = 0.8
+
     // MARK: - State
 
     /// The last smoothed index-tip position of the right hand (normalized
@@ -73,8 +89,18 @@ public struct HandActionRouter: Sendable {
     /// Previous left-hand gesture — used to detect edge transitions.
     private var lastLeftGesture: DetectedHandGesture = .none
 
+    /// Previous right-hand gesture — used to detect the "both fists"
+    /// edge transition for Mission Control.
+    private var lastRightGesture: DetectedHandGesture = .none
+
     /// Timestamp of the last click emitted, for temporal debounce.
     private var lastClickTime: Date?
+
+    /// Timestamp of the last Cmd+Tab emitted.
+    private var lastAppSwitcherTime: Date?
+
+    /// Timestamp of the last Mission Control emitted.
+    private var lastMissionControlTime: Date?
 
     /// Whether the user is currently holding the left fist (drag active).
     /// Exposed so HandCommandModule can decide whether moveCursor should
@@ -134,11 +160,39 @@ public struct HandActionRouter: Sendable {
             smoother.reset()
         }
 
-        // Left hand → drag (fist) + click (pinch) + scroll (pointing).
+        // Two-fists → Mission Control. Checked BEFORE the drag state
+        // machine so that entering the two-fists pose cancels an
+        // in-progress drag (if any) instead of leaving it stuck.
+        // Edge-triggered: fires once on the transition into the pose,
+        // with a debounce so re-entering doesn't spam F3.
+        let bothFists = (left?.gesture == .fist) && (right?.gesture == .fist)
+        let wasBothFists = (lastLeftGesture == .fist) && (lastRightGesture == .fist)
+
+        if bothFists && !wasBothFists {
+            let longEnough = lastMissionControlTime
+                .map { now.timeIntervalSince($0) >= missionControlDebounce } ?? true
+            if longEnough {
+                // If a drag was active (left fist alone), close it out
+                // cleanly before firing the shortcut.
+                if isDragging {
+                    actions.append(.dragEnd(at: lastRightIndexTip))
+                    isDragging = false
+                }
+                actions.append(.missionControl)
+                lastMissionControlTime = now
+                scrollDetector.reset()
+            }
+        }
+
+        // Left hand → drag (fist) + click (pinch) + scroll (circle) +
+        // shaka (app switcher).
         if let left {
-            // Drag state machine runs FIRST so we know if a pinch in this
-            // frame should be suppressed.
-            if left.gesture == .fist {
+            // Drag state machine. Only engage if the RIGHT hand isn't
+            // also in a fist — that combination is Mission Control and
+            // was handled above. Without this guard, the very first
+            // frame of two-fists would fire Mission Control AND start
+            // a drag on the same frame.
+            if left.gesture == .fist && right?.gesture != .fist {
                 if !isDragging {
                     actions.append(.dragBegin(at: lastRightIndexTip))
                     isDragging = true
@@ -151,14 +205,16 @@ public struct HandActionRouter: Sendable {
 
             // Scroll — circular motion. Feed the left index tip to the
             // detector whenever the hand is visible and NOT in a drag
-            // or click pose. The detector watches for the tip tracing a
-            // loop in the air and emits scroll pulses proportional to
-            // the rotation speed. A stationary or linear-motion hand
-            // does nothing — only a real circle produces scroll.
+            // or click/shaka pose. The detector watches for the tip
+            // tracing a loop in the air and emits scroll pulses
+            // proportional to the rotation speed. A stationary or
+            // linear-motion hand does nothing — only a real circle
+            // produces scroll.
             let scrollGestureAllowed =
                 !isDragging &&
                 left.gesture != .pinch &&
-                left.gesture != .fist
+                left.gesture != .fist &&
+                left.gesture != .shaka
             if scrollGestureAllowed,
                let tip = left.snapshot.landmarks[.indexTip]?.position {
                 scrollDetector.observe(point: tip, at: now)
@@ -188,6 +244,20 @@ public struct HandActionRouter: Sendable {
                 }
             }
 
+            // Shaka → Cmd+Tab. Edge-triggered with debounce so the user
+            // can cycle apps by flapping the pose in and out, but
+            // classifier noise doesn't spam the shortcut.
+            if !isDragging && !isScrolling &&
+               left.gesture == .shaka &&
+               lastLeftGesture != .shaka {
+                let longEnough = lastAppSwitcherTime
+                    .map { now.timeIntervalSince($0) >= appSwitcherDebounce } ?? true
+                if longEnough {
+                    actions.append(.appSwitcher)
+                    lastAppSwitcherTime = now
+                }
+            }
+
             lastLeftGesture = left.gesture
         } else {
             // Left hand disappeared — fail-safe end of drag so the user
@@ -201,6 +271,11 @@ public struct HandActionRouter: Sendable {
             scrollDetector.reset()
             lastLeftGesture = .none
         }
+
+        // Track the right hand's gesture for the two-fists edge trigger
+        // on the next frame. `.none` when the hand is missing so a
+        // briefly-dropped frame doesn't fake a fresh edge transition.
+        lastRightGesture = right?.gesture ?? .none
 
         return actions
     }

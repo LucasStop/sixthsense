@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Carbon.HIToolbox
 import CoreGraphics
 import ApplicationServices
 @preconcurrency import Vision
@@ -312,6 +313,7 @@ public final class HandCommandModule: SixthSenseModule {
         case .dragEnd:           return "dragUp"
         case .scroll:            return "scroll"
         case .missionControl:    return "mission"
+        case .appSwitcher:       return "⌘tab"
         case .showDesktop:       return "desktop"
         case .switchSpaceLeft:   return "←space"
         case .switchSpaceRight:  return "space→"
@@ -366,10 +368,29 @@ public final class HandCommandModule: SixthSenseModule {
             case .scroll(let deltaY):
                 cursorController.scroll(deltaY: deltaY, deltaX: 0)
 
+            case .missionControl:
+                // Ctrl + Up Arrow is the universally available Mission
+                // Control shortcut; some keyboards remap F3 to brightness
+                // so we avoid relying on it.
+                keyboardInput.pressKey(
+                    keyCode: CGKeyCode(kVK_UpArrow),
+                    modifiers: .maskControl
+                )
+
+            case .appSwitcher:
+                // Cmd + Tab cycles to the previous app. The macOS app
+                // switcher appears briefly and commits when Cmd is
+                // released, which happens automatically since pressKey
+                // posts a paired down+up with the modifier flag.
+                keyboardInput.pressKey(
+                    keyCode: CGKeyCode(kVK_Tab),
+                    modifiers: .maskCommand
+                )
+
             // Still disabled — keep the gesture set lean. These cases are
             // recognised at the type level but produce no output.
             case .doubleClick,
-                 .missionControl, .showDesktop,
+                 .showDesktop,
                  .switchSpaceLeft, .switchSpaceRight,
                  .holdCommand, .releaseCommand:
                 break

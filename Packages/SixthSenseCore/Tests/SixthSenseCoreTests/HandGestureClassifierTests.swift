@@ -182,3 +182,75 @@ private func handSnapshot(
     #expect(HandGestureClassifier.classify(small) == HandGestureClassifier.classify(large))
     #expect(HandGestureClassifier.classify(small) == .openHand)
 }
+
+// MARK: - Shaka
+
+@Test func classifierDetectsShakaWhenThumbAndPinkyAreExtended() {
+    // Thumb and pinky extended; index/middle/ring curled inward. This
+    // is the "hang loose" pose and triggers Cmd+Tab.
+    let snap = handSnapshot(
+        thumb: 0.42,
+        index: 0.22,
+        middle: 0.22,
+        ring: 0.22,
+        little: 0.42
+    )
+    #expect(HandGestureClassifier.classify(snap) == .shaka)
+}
+
+@Test func classifierRejectsShakaWhenIndexIsExtended() {
+    // Thumb + pinky + INDEX extended = not shaka (too many fingers out).
+    let snap = handSnapshot(
+        thumb: 0.42,
+        index: 0.42,
+        middle: 0.22,
+        ring: 0.22,
+        little: 0.42
+    )
+    #expect(HandGestureClassifier.classify(snap) != .shaka)
+}
+
+@Test func classifierRejectsShakaWhenThumbIsCurled() {
+    // Pinky extended but thumb curled = not shaka. Different pose;
+    // neither of the other cases should match either (only pinky out).
+    let snap = handSnapshot(
+        thumb: 0.20,
+        index: 0.22,
+        middle: 0.22,
+        ring: 0.22,
+        little: 0.42
+    )
+    #expect(HandGestureClassifier.classify(snap) != .shaka)
+}
+
+@Test func classifierShakaIsScaleInvariant() {
+    let small = handSnapshot(
+        thumb: 0.22,
+        index: 0.12,
+        middle: 0.12,
+        ring: 0.12,
+        little: 0.22
+    )
+    let large = handSnapshot(
+        thumb: 0.45,
+        index: 0.24,
+        middle: 0.24,
+        ring: 0.24,
+        little: 0.45
+    )
+    #expect(HandGestureClassifier.classify(small) == .shaka)
+    #expect(HandGestureClassifier.classify(large) == .shaka)
+}
+
+@Test func classifierShakaDoesNotMatchFist() {
+    // A fist (all four curled) must NOT classify as shaka. Safety
+    // check since shaka is now evaluated before fist in the classifier.
+    let snap = handSnapshot(
+        thumb: 0.40,
+        index: 0.25,
+        middle: 0.24,
+        ring: 0.24,
+        little: 0.24
+    )
+    #expect(HandGestureClassifier.classify(snap) == .fist)
+}

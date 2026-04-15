@@ -96,6 +96,7 @@ public enum DetectedHandGesture: String, Sendable, Hashable, CaseIterable {
     case pointing
     case openHand
     case fist
+    case shaka
 
     /// User-facing label (Portuguese).
     public var label: String {
@@ -105,6 +106,7 @@ public enum DetectedHandGesture: String, Sendable, Hashable, CaseIterable {
         case .pointing: return "Apontando"
         case .openHand: return "Mão Aberta"
         case .fist:     return "Punho Fechado"
+        case .shaka:    return "Shaka"
         }
     }
 
@@ -116,6 +118,7 @@ public enum DetectedHandGesture: String, Sendable, Hashable, CaseIterable {
         case .pointing: return "hand.point.up.left"
         case .openHand: return "hand.raised"
         case .fist:     return "hand.raised.fingers.spread"
+        case .shaka:    return "hand.wave"
         }
     }
 }

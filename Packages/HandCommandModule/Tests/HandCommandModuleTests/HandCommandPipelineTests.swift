@@ -96,6 +96,13 @@ private func snapshot(for gesture: DetectedHandGesture, wrist: CGPoint = CGPoint
             thumb: 0.40, index: 0.25,
             middle: 0.24, ring: 0.24, little: 0.24
         )
+    case .shaka:
+        // Thumb and little extended; index/middle/ring curled tight.
+        joints = landmarks(
+            wrist: wrist,
+            thumb: 0.42, index: 0.22,
+            middle: 0.22, ring: 0.22, little: 0.42
+        )
     case .none:
         joints = landmarks(
             wrist: wrist,
@@ -399,6 +406,90 @@ private func leftHandWithIndex(at tip: CGPoint) -> HandReading {
 
     let scrollCount = h.cursor.calls.filter { if case .scroll = $0 { return true }; return false }.count
     #expect(scrollCount == 0)
+}
+
+// MARK: - Mission Control (both fists) + Cmd+Tab (shaka)
+
+@Test @MainActor func pipelineBothFistsPressesCtrlUpArrow() async throws {
+    let h = Harness.make()
+    try await h.module.start()
+
+    h.module.handleReadings([
+        reading(.left,  .fist),
+        reading(.right, .fist),
+    ])
+
+    // kVK_UpArrow = 0x7E (126). Must be called with Ctrl modifier.
+    let hasCtrlUp = h.keyboard.calls.contains { call in
+        if case .press(let keyCode, let modifiers) = call {
+            return keyCode == 0x7E && (modifiers & CGEventFlags.maskControl.rawValue) != 0
+        }
+        return false
+    }
+    #expect(hasCtrlUp == true)
+}
+
+@Test @MainActor func pipelineBothFistsDoesNotStartDrag() async throws {
+    let h = Harness.make()
+    try await h.module.start()
+
+    h.module.handleReadings([
+        reading(.left,  .fist),
+        reading(.right, .fist),
+    ])
+
+    // The mouse must NOT have received a leftMouseDown — the fist
+    // combination is Mission Control, not drag.
+    let downCount = h.cursor.calls.filter {
+        if case .leftMouseDown = $0 { return true }; return false
+    }.count
+    #expect(downCount == 0)
+}
+
+@Test @MainActor func pipelineLeftShakaPressesCmdTab() async throws {
+    let h = Harness.make()
+    try await h.module.start()
+
+    // Need a non-shaka frame first so the edge trigger fires on the
+    // transition into shaka.
+    h.module.handleReadings([reading(.left, .none)])
+    h.module.handleReadings([reading(.left, .shaka)])
+
+    // kVK_Tab = 0x30 (48). Must be called with Cmd modifier.
+    let hasCmdTab = h.keyboard.calls.contains { call in
+        if case .press(let keyCode, let modifiers) = call {
+            return keyCode == 0x30 && (modifiers & CGEventFlags.maskCommand.rawValue) != 0
+        }
+        return false
+    }
+    #expect(hasCmdTab == true)
+}
+
+@Test @MainActor func pipelineLeftShakaHeldDoesNotSpamCmdTab() async throws {
+    let h = Harness.make()
+    try await h.module.start()
+
+    h.module.handleReadings([reading(.left, .none)])
+    h.module.handleReadings([reading(.left, .shaka)])
+    h.module.handleReadings([reading(.left, .shaka)])
+    h.module.handleReadings([reading(.left, .shaka)])
+
+    let pressCount = h.keyboard.calls.filter { call in
+        if case .press(let keyCode, _) = call {
+            return keyCode == 0x30
+        }
+        return false
+    }.count
+    #expect(pressCount == 1)
+}
+
+@Test @MainActor func pipelineRightShakaDoesNotPressCmdTab() async throws {
+    let h = Harness.make()
+    try await h.module.start()
+
+    h.module.handleReadings([reading(.right, .shaka)])
+
+    #expect(h.keyboard.calls.isEmpty)
 }
 
 // MARK: - Hand disappearance

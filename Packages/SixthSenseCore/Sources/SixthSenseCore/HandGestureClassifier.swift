@@ -68,6 +68,7 @@ public enum HandGestureClassifier {
         }
 
         // Ratios of each finger to the longest one in the hand.
+        let relThumb  = thumbDist  / maxDist
         let relIndex  = indexDist  / maxDist
         let relMiddle = middleDist / maxDist
         let relRing   = ringDist   / maxDist
@@ -76,6 +77,18 @@ public enum HandGestureClassifier {
         let nonThumbFingers = [relIndex, relMiddle, relRing, relLittle]
         let extendedCount = nonThumbFingers.filter { $0 >= extendedRatio }.count
         let curledCount   = nonThumbFingers.filter { $0 <= curledRatio }.count
+
+        // Shaka (hang loose) — thumb and pinky extended, index/middle/ring
+        // curled. Checked BEFORE pointing/fist because its signature
+        // uniquely needs an extended pinky alongside an extended thumb,
+        // which neither of the others require.
+        if relThumb  >= extendedRatio &&
+           relLittle >= extendedRatio &&
+           relIndex  < curledRatio &&
+           relMiddle < curledRatio &&
+           relRing   < curledRatio {
+            return .shaka
+        }
 
         // Pointing — index clearly longer than the other three fingers.
         // We use a slightly looser test (>= curledRatio) to tolerate real
