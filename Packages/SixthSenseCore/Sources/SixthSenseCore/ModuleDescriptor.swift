@@ -28,10 +28,10 @@ public struct ModuleDescriptor: Sendable, Identifiable {
 // MARK: - Module Category
 
 public enum ModuleCategory: String, Sendable, CaseIterable {
-    case input       // HandCommand, GazeShift, AirCursor
-    case display     // PortalView
-    case transfer    // GhostDrop
-    case interface   // NotchBar
+    case input       // Modules that capture user input (gestures, pose, etc.)
+    case display     // Modules that manipulate display output
+    case transfer    // Modules that move data between devices
+    case interface   // Modules that add UI chrome
 
     public var label: String {
         switch self {

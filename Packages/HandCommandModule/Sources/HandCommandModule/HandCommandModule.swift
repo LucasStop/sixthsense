@@ -11,13 +11,14 @@ import SharedServices
 
 // MARK: - HandCommand Module
 
-/// Tracks both of the user's hands via the webcam and translates gestures into
-/// real desktop actions:
+/// Tracks both of the user's hands via the webcam and translates gestures
+/// into real desktop actions:
 ///
-///   • Right hand: cursor movement, click/double-click, drag, scroll.
-///   • Left  hand: Mission Control, Show Desktop, switch Space, hold Command.
+///   • Right hand: cursor movement (pointing), Mission Control (fist hold).
+///   • Left  hand: click (pinch), drag (fist), scroll (circular motion),
+///                 app switcher ⌘+Tab (shaka).
 ///
-/// The pure classification and action routing lives in `HandGestureClassifier`
+/// Pure classification and action routing live in `HandGestureClassifier`
 /// and `HandActionRouter` (both in SixthSenseCore), so the Vision/CGEvent
 /// glue here stays thin.
 @MainActor

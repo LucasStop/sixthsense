@@ -4,8 +4,8 @@ import Foundation
 // MARK: - Camera Frame Distributor
 
 /// Receives frames from AVCaptureSession and multicasts them to all registered subscribers.
-/// This allows multiple modules (HandCommand, GazeShift, GhostDrop) to process the same
-/// camera frames without duplicating the AVCaptureSession.
+/// This allows multiple subscribers to process the same camera frames without duplicating
+/// the AVCaptureSession.
 public final class CameraFrameDistributor: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
 
     let processingQueue = DispatchQueue(label: "com.sixthsense.camera.processing", qos: .userInteractive)

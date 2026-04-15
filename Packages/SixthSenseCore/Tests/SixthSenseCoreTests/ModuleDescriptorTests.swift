@@ -3,17 +3,17 @@ import Testing
 
 @Test func moduleDescriptorStoresAllFields() {
     let descriptor = ModuleDescriptor(
-        id: "air-cursor",
-        name: "AirCursor",
-        tagline: "Telekinesis KVM",
-        systemImage: "iphone.radiowaves.left.and.right",
+        id: "hand-command",
+        name: "HandCommand",
+        tagline: "Minority Report Desktop",
+        systemImage: "hand.raised",
         category: .input
     )
 
-    #expect(descriptor.id == "air-cursor")
-    #expect(descriptor.name == "AirCursor")
-    #expect(descriptor.tagline == "Telekinesis KVM")
-    #expect(descriptor.systemImage == "iphone.radiowaves.left.and.right")
+    #expect(descriptor.id == "hand-command")
+    #expect(descriptor.name == "HandCommand")
+    #expect(descriptor.tagline == "Minority Report Desktop")
+    #expect(descriptor.systemImage == "hand.raised")
     #expect(descriptor.category == .input)
 }
 

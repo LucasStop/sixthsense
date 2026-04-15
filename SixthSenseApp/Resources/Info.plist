@@ -19,14 +19,6 @@
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>NSCameraUsageDescription</key>
-    <string>O SixthSense usa a câmera para rastreamento de gestos e olhar.</string>
-    <key>NSLocalNetworkUsageDescription</key>
-    <string>O SixthSense conecta-se a dispositivos companheiros na sua rede local.</string>
-    <key>NSBonjourServices</key>
-    <array>
-        <string>_sixthsense._tcp</string>
-    </array>
-    <key>NSMicrophoneUsageDescription</key>
-    <string>O SixthSense usa o microfone para visualização de áudio no NotchBar.</string>
+    <string>O SixthSense usa a câmera frontal para rastrear suas mãos e detectar gestos.</string>
 </dict>
 </plist>

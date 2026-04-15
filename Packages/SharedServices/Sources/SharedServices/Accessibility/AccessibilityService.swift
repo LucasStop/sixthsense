@@ -29,7 +29,7 @@ public struct WindowInfo: Identifiable, Sendable {
 // MARK: - Accessibility Service
 
 /// Wraps macOS Accessibility API (AXUIElement) for window querying and manipulation.
-/// Used by HandCommand (grab/move/resize windows) and GazeShift (focus/dim windows).
+/// Used by HandCommand for window-level operations.
 @MainActor
 public final class AccessibilityService {
 

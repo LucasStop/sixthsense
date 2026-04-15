@@ -4,7 +4,7 @@ import Foundation
 // MARK: - Cursor Controller
 
 /// Injects synthetic mouse events (movement, clicks, scrolling) via CGEvent.
-/// Shared by HandCommand (gesture-driven) and AirCursor (gyro-driven).
+/// Used by HandCommand to drive the cursor from hand gestures.
 public final class CursorController: @unchecked Sendable {
 
     public init() {}

@@ -30,7 +30,7 @@ public struct OverlayWindowConfig {
         )
     }
 
-    /// Fixed-position interactive overlay (for NotchBar)
+    /// Fixed-position interactive overlay for fixed-frame UI.
     public static func interactive(frame: NSRect, level: NSWindow.Level = .statusBar) -> OverlayWindowConfig {
         OverlayWindowConfig(frame: frame, level: level, clickThrough: false)
     }

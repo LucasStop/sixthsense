@@ -26,7 +26,7 @@ public enum PermissionType: String, Sendable, CaseIterable {
         case .accessibility: return "Necessário para gerenciamento de janelas e controle do cursor"
         case .screenRecording: return "Necessário para captura de conteúdo da tela"
         case .localNetwork: return "Necessário para comunicação entre dispositivos"
-        case .microphone: return "Necessário para visualização de áudio no NotchBar"
+        case .microphone: return "Necessário para captura de áudio"
         }
     }
 

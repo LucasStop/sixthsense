@@ -4,7 +4,7 @@ import SixthSenseCore
 // MARK: - Camera Manager
 
 /// Manages a single shared AVCaptureSession and distributes frames to multiple subscribers.
-/// HandCommand, GazeShift, and GhostDrop all share this single camera pipeline.
+/// HandCommand uses this pipeline; additional modules can subscribe as extra frame consumers.
 @MainActor
 @Observable
 public final class CameraManager {
