@@ -117,6 +117,15 @@ public final class HandCommandModule: SixthSenseModule {
     /// Pure state machine that converts raw readings into actions.
     private var router = HandActionRouter()
 
+    /// Live flag that lights up while a scroll momentum pulse is still
+    /// active. Forwarded from the router so the training view can show
+    /// a "rolando" badge without reaching into private state.
+    public var isScrolling: Bool { router.isScrolling }
+
+    /// Live flag that lights up while the user is holding a drag.
+    /// Forwarded from the router for the same reason.
+    public var isDragging: Bool { router.isDragging }
+
     // MARK: - Init
 
     /// - Parameters:

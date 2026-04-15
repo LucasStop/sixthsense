@@ -81,28 +81,16 @@ public struct HandActionRouter: Sendable {
     /// be dispatched as a plain mouseMoved or as a leftMouseDragged.
     public private(set) var isDragging: Bool = false
 
-    /// Whether the user is currently holding the left hand in pointing
-    /// mode (scrolling). Exposed so the training view can light up a
-    /// "scrolling" badge in real time.
-    public private(set) var isScrolling: Bool = false
+    /// Whether a scroll momentum pulse is currently fading out. True
+    /// immediately after a flick and for as long as the momentum is
+    /// above the detector's minimum threshold.
+    public var isScrolling: Bool {
+        scrollDetector.isScrolling
+    }
 
-    // MARK: - Scroll tuning
-
-    /// Vertical distance (in normalized Vision coords) between the left
-    /// wrist and the left index tip at which the scroll speed saturates.
-    /// 0.20 means "about a hand length" — the full finger extension up
-    /// or down from the wrist produces max speed.
-    public var scrollSaturationDistance: Double = 0.20
-
-    /// Minimum |index - wrist| along the vertical axis before we start
-    /// scrolling at all. Below this the gesture is treated as "parked"
-    /// to prevent jittery scroll near the wrist.
-    public var scrollDeadzone: Double = 0.03
-
-    /// Maximum scroll wheel delta (in pixels) to emit per frame when
-    /// the gesture is saturated. Smaller values feel slower / more
-    /// controlled. Apps interpret deltaY > 0 as "scroll up".
-    public var scrollMaxDelta: Int32 = 18
+    /// Impulse-based scroll: watches wrist vertical velocity and emits
+    /// decaying scroll pulses when a flick is detected.
+    private var scrollDetector = SwipeScrollDetector()
 
     /// One Euro Filter for the cursor x/y — smooths hand jitter while
     /// keeping intentional movement responsive.
@@ -161,27 +149,28 @@ public struct HandActionRouter: Sendable {
                 isDragging = false
             }
 
-            // Scroll — left hand with index tip meaningfully away from
-            // the wrist (vertically), as long as the user isn't pinching
-            // or making a fist. We deliberately DON'T require the
-            // classifier to report `.pointing` because that gesture is
-            // picky — users tend to leave the other fingers semi-bent and
-            // the classifier rejects the pose. Gating by geometry is much
-            // more forgiving and still produces a scroll signal only
-            // when the user actually raises or lowers their index finger.
-            if !isDragging,
-               left.gesture != .pinch,
-               left.gesture != .fist,
-               let delta = Self.scrollDelta(
-                    for: left.snapshot,
-                    deadzone: scrollDeadzone,
-                    saturation: scrollSaturationDistance,
-                    maxDelta: scrollMaxDelta
-               ) {
-                isScrolling = true
+            // Scroll — swipe-based. Feed the wrist Y to the detector
+            // whenever the left hand is visible and NOT in a drag or
+            // click pose. The detector watches for fast vertical flicks
+            // and emits decaying momentum pulses. A relaxed or lifted
+            // hand does nothing — only deliberate motion produces scroll.
+            let scrollGestureAllowed =
+                !isDragging &&
+                left.gesture != .pinch &&
+                left.gesture != .fist
+            if scrollGestureAllowed,
+               let wrist = left.snapshot.landmarks[.wrist]?.position {
+                scrollDetector.observe(wristY: Double(wrist.y), at: now)
+            } else {
+                // Suppressed gestures reset the detector so a click or
+                // drag can't leak into a stale momentum pulse.
+                scrollDetector.reset()
+            }
+
+            // Always step the momentum after observing, so the decay
+            // runs even on frames where no new sample was fed.
+            if let delta = scrollDetector.step(now: now) {
                 actions.append(.scroll(deltaY: delta))
-            } else if isScrolling {
-                isScrolling = false
             }
 
             // Click only when NOT dragging AND NOT scrolling (so a pinch
@@ -206,7 +195,9 @@ public struct HandActionRouter: Sendable {
                 actions.append(.dragEnd(at: lastRightIndexTip))
                 isDragging = false
             }
-            isScrolling = false
+            // Reset scroll momentum so a hand that's briefly out of
+            // frame can't leak an old flick into the next session.
+            scrollDetector.reset()
             lastLeftGesture = .none
         }
 

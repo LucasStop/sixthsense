@@ -450,13 +450,13 @@ struct HandTrainingView: View {
             leftIcon = "hand.pinch.fill"
             leftDescription = "Clicando!"
             leftActive = true
-        } else if leftGesture == .pointing {
+        } else if handModule.isScrolling {
             leftIcon = "arrow.up.arrow.down.circle.fill"
             leftDescription = "Rolando..."
             leftActive = true
         } else {
             leftIcon = "hand.pinch"
-            leftDescription = "Pinça clica   •   Punho arrasta   •   Aponta rola"
+            leftDescription = "Pinça clica   •   Punho arrasta   •   Flick rola"
             leftActive = false
         }
 
@@ -504,7 +504,7 @@ struct HandTrainingView: View {
                     legendItem(icon: "hand.raised.fill", color: .orange,
                                label: "Arrastar", description: "Mão esquerda fecha o punho")
                     legendItem(icon: "arrow.up.arrow.down", color: .purple,
-                               label: "Rolar", description: "Mão esquerda aponta pra cima/baixo")
+                               label: "Rolar", description: "Flick vertical rápido com a esquerda")
                 }
             }
         }

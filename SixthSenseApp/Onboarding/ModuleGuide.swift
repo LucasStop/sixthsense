@@ -126,7 +126,7 @@ extension ModuleGuide {
                 name: "Rolar",
                 icon: "arrow.up.arrow.down",
                 action: "Mão esquerda",
-                howTo: "Estenda o indicador da mão esquerda apontando para cima ou para baixo. Quanto mais longe do pulso, mais rápido rola — volte ao centro para parar."
+                howTo: "Faça um flick vertical rápido com a mão esquerda, como se estivesse empurrando a página para cima ou para baixo. Cada flick gera um pulso de scroll com momentum que decai sozinho. Flicks sucessivos aceleram a rolagem."
             ),
         ],
         tips: [

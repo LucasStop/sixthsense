@@ -295,155 +295,156 @@ private func reading(
     #expect(idleCount == 0)
 }
 
-// MARK: - Left hand → scroll (pointing)
+// MARK: - Left hand → scroll (swipe momentum)
 
-@Test func leftPointingWithIndexAboveWristScrollsUp() {
-    var router = HandActionRouter()
-    // Wrist at (0.5, 0.4) and index tip at (0.5, 0.7) — finger points
-    // UP from the wrist in Vision's bottom-left coordinate system, so
-    // the router should emit a positive deltaY (scroll up).
-    let left = reading(
-        chirality: .left,
-        gesture: .pointing,
-        landmarks: landmarks(
-            wrist: CGPoint(x: 0.5, y: 0.4),
-            index: CGPoint(x: 0.5, y: 0.7)
+/// Feeds a sequence of left-hand frames with the wrist at the given Y
+/// values into the router and returns all the scroll actions the router
+/// produced, in order.
+@discardableResult
+private func simulateLeftWristFlick(
+    router: inout HandActionRouter,
+    yPositions: [Double],
+    startingAt start: Date = Date(),
+    frameInterval: TimeInterval = 1.0 / 60.0
+) -> [Int32] {
+    var deltas: [Int32] = []
+    for (index, y) in yPositions.enumerated() {
+        let t = start.addingTimeInterval(frameInterval * Double(index))
+        let l = reading(
+            chirality: .left,
+            gesture: .openHand,
+            landmarks: landmarks(
+                wrist: CGPoint(x: 0.5, y: CGFloat(y)),
+                index: CGPoint(x: 0.5, y: CGFloat(y + 0.05))
+            )
         )
-    )
-
-    let actions = router.process(left: left, right: nil)
-
-    let delta: Int32? = actions.compactMap { action in
-        if case .scroll(let d) = action { return d }
-        return nil
-    }.first
-    #expect(delta != nil)
-    #expect((delta ?? 0) > 0)
-    #expect(router.isScrolling == true)
+        let actions = router.process(left: l, right: nil, now: t)
+        for action in actions {
+            if case .scroll(let d) = action {
+                deltas.append(d)
+            }
+        }
+    }
+    return deltas
 }
 
-@Test func leftPointingWithIndexBelowWristScrollsDown() {
+@Test func idleLeftHandDoesNotScroll() {
     var router = HandActionRouter()
-    let left = reading(
-        chirality: .left,
-        gesture: .pointing,
-        landmarks: landmarks(
-            wrist: CGPoint(x: 0.5, y: 0.6),
-            index: CGPoint(x: 0.5, y: 0.3)
-        )
+    // Hold the wrist rock-steady at y = 0.5 for 10 frames. No velocity,
+    // no swipe, no scroll — even though the hand is "visible".
+    let deltas = simulateLeftWristFlick(
+        router: &router,
+        yPositions: Array(repeating: 0.5, count: 10)
     )
-
-    let actions = router.process(left: left, right: nil)
-    let delta: Int32? = actions.compactMap { action in
-        if case .scroll(let d) = action { return d }
-        return nil
-    }.first
-    #expect(delta != nil)
-    #expect((delta ?? 0) < 0)
-}
-
-@Test func leftPointingInsideDeadzoneDoesNotScroll() {
-    var router = HandActionRouter()
-    // Index tip only 0.01 above wrist — well inside the 0.03 deadzone.
-    let left = reading(
-        chirality: .left,
-        gesture: .pointing,
-        landmarks: landmarks(
-            wrist: CGPoint(x: 0.5, y: 0.5),
-            index: CGPoint(x: 0.5, y: 0.51)
-        )
-    )
-
-    let actions = router.process(left: left, right: nil)
-    #expect(actions.contains { if case .scroll = $0 { return true }; return false } == false)
-}
-
-@Test func leftPointingStopsScrollingWhenGestureChanges() {
-    var router = HandActionRouter()
-    let pointing = reading(
-        chirality: .left,
-        gesture: .pointing,
-        landmarks: landmarks(
-            wrist: CGPoint(x: 0.5, y: 0.4),
-            index: CGPoint(x: 0.5, y: 0.7)
-        )
-    )
-    _ = router.process(left: pointing, right: nil)
-    #expect(router.isScrolling == true)
-
-    let openHand = reading(chirality: .left, gesture: .openHand)
-    _ = router.process(left: openHand, right: nil)
+    #expect(deltas.isEmpty)
     #expect(router.isScrolling == false)
 }
 
-@Test func leftScrollIsSuppressedWhileDragging() {
+@Test func raisedLeftHandWithoutMotionDoesNotScroll() {
+    // The original bug: user lifts the left hand to bring it into the
+    // frame. The raise itself is motion, but afterwards the hand is
+    // stationary — the detector should STOP emitting scrolls once the
+    // momentum from the raise decays away.
     var router = HandActionRouter()
-    // First: start dragging with left fist.
+
+    // Raise phase: wrist goes from 0.2 to 0.6 over 6 frames. This may
+    // trigger a swipe because the velocity is high.
+    _ = simulateLeftWristFlick(
+        router: &router,
+        yPositions: [0.2, 0.3, 0.4, 0.5, 0.55, 0.6]
+    )
+
+    // Hold steady for 90 frames (1.5 seconds) — plenty of time for the
+    // momentum to decay below the minimum magnitude.
+    let t = Date().addingTimeInterval(1.0)
+    _ = simulateLeftWristFlick(
+        router: &router,
+        yPositions: Array(repeating: 0.6, count: 90),
+        startingAt: t
+    )
+
+    // After 1.5 seconds of steady hand, the detector MUST be idle.
+    // If it isn't, the old bug is back: the hand's mere presence
+    // would keep scrolling the page forever.
+    #expect(router.isScrolling == false)
+}
+
+@Test func upwardFlickProducesPositiveScroll() {
+    var router = HandActionRouter()
+
+    // A deliberate fast flick: wrist goes from 0.3 to 0.7 in 5 frames.
+    // At 60 FPS that's 0.4 units in ~83ms → velocity ~4.8 units/sec,
+    // well past the 1.2 threshold.
+    let deltas = simulateLeftWristFlick(
+        router: &router,
+        yPositions: [0.3, 0.4, 0.5, 0.6, 0.7]
+    )
+
+    #expect(!deltas.isEmpty)
+    // At least one delta should be strictly positive (scroll up).
+    #expect(deltas.contains { $0 > 0 })
+}
+
+@Test func downwardFlickProducesNegativeScroll() {
+    var router = HandActionRouter()
+
+    // Opposite direction — wrist drops from 0.7 to 0.3.
+    let deltas = simulateLeftWristFlick(
+        router: &router,
+        yPositions: [0.7, 0.6, 0.5, 0.4, 0.3]
+    )
+
+    #expect(!deltas.isEmpty)
+    #expect(deltas.contains { $0 < 0 })
+}
+
+@Test func momentumDecaysAfterFlick() {
+    var router = HandActionRouter()
+
+    // Flick + hold steady — the momentum should keep emitting deltas
+    // for a few frames after the flick then fall silent.
+    let flickFrames = [0.3, 0.4, 0.5, 0.6, 0.7]
+    let holdFrames = Array(repeating: 0.7, count: 30)
+    let deltas = simulateLeftWristFlick(
+        router: &router,
+        yPositions: flickFrames + holdFrames
+    )
+
+    // The beginning of the sequence has scrolls; the end is quiet.
+    #expect(!deltas.isEmpty)
+    // isScrolling flips false once the momentum fully decays.
+    #expect(router.isScrolling == false)
+}
+
+@Test func leftPinchSuppressesScroll() {
+    var router = HandActionRouter()
+    // A pinch frame should reset the detector even with prior motion.
+    _ = simulateLeftWristFlick(
+        router: &router,
+        yPositions: [0.3, 0.4, 0.5, 0.6, 0.7]
+    )
+
+    let pinch = reading(chirality: .left, gesture: .pinch)
+    let actions = router.process(left: pinch, right: nil, now: Date().addingTimeInterval(0.5))
+
+    #expect(actions.contains { if case .scroll = $0 { return true }; return false } == false)
+    #expect(router.isScrolling == false)
+}
+
+@Test func leftFistSuppressesScrollAndEntersDrag() {
+    var router = HandActionRouter()
+    _ = simulateLeftWristFlick(
+        router: &router,
+        yPositions: [0.3, 0.4, 0.5, 0.6, 0.7]
+    )
+
     let fist = reading(chirality: .left, gesture: .fist)
-    _ = router.process(left: fist, right: nil)
+    let actions = router.process(left: fist, right: nil, now: Date().addingTimeInterval(0.5))
+
+    // Fist must start drag and NOT emit scroll.
+    #expect(actions.contains { if case .dragBegin = $0 { return true }; return false })
+    #expect(actions.contains { if case .scroll = $0 { return true }; return false } == false)
     #expect(router.isDragging == true)
-
-    // Transition to pointing while still "dragging" — the router
-    // ends the drag first, but scroll should not fire IN THE SAME frame
-    // because the dragEnd happens and then we decide scroll. However the
-    // gesture IS pointing so the scrollCapture runs. This test asserts
-    // that when drag is active at the start of the frame, scroll is
-    // suppressed; once drag ends a future frame can scroll again.
-    // To test the "drag active" case we pass another fist frame:
-    _ = router.process(left: fist, right: nil)
-
-    // Now try to emit scroll while still in drag: we need a frame where
-    // gesture != .fist to exit drag. So transition to pointing next.
-    let pointing = reading(
-        chirality: .left,
-        gesture: .pointing,
-        landmarks: landmarks(
-            wrist: CGPoint(x: 0.5, y: 0.4),
-            index: CGPoint(x: 0.5, y: 0.7)
-        )
-    )
-    let actions = router.process(left: pointing, right: nil)
-
-    // After transitioning away from fist, drag should be ended and
-    // scroll should now fire from this same frame.
-    #expect(router.isDragging == false)
-    #expect(actions.contains { if case .dragEnd = $0 { return true }; return false })
-    #expect(actions.contains { if case .scroll = $0 { return true }; return false })
-}
-
-@Test func leftScrollDeltaStaticMath() {
-    // Build a confident snapshot and verify the pure scrollDelta helper.
-    let l: [HandJoint: HandLandmark] = [
-        .wrist: HandLandmark(joint: .wrist, position: CGPoint(x: 0.5, y: 0.4), confidence: 0.9),
-        .indexTip: HandLandmark(joint: .indexTip, position: CGPoint(x: 0.5, y: 0.65), confidence: 0.9),
-    ]
-    let snap = HandLandmarksSnapshot(landmarks: l, gesture: .pointing)
-
-    let delta = HandActionRouter.scrollDelta(
-        for: snap,
-        deadzone: 0.03,
-        saturation: 0.20,
-        maxDelta: 20
-    )
-    #expect(delta != nil)
-    // Offset = 0.25, beyond saturation 0.20 → saturated positive delta.
-    #expect((delta ?? 0) == 20)
-}
-
-@Test func leftScrollDeltaReturnsNilInsideDeadzone() {
-    let l: [HandJoint: HandLandmark] = [
-        .wrist: HandLandmark(joint: .wrist, position: CGPoint(x: 0.5, y: 0.5), confidence: 0.9),
-        .indexTip: HandLandmark(joint: .indexTip, position: CGPoint(x: 0.5, y: 0.51), confidence: 0.9),
-    ]
-    let snap = HandLandmarksSnapshot(landmarks: l, gesture: .pointing)
-
-    let delta = HandActionRouter.scrollDelta(
-        for: snap,
-        deadzone: 0.05,
-        saturation: 0.20,
-        maxDelta: 20
-    )
-    #expect(delta == nil)
 }
 
 // MARK: - Neither hand = no actions
