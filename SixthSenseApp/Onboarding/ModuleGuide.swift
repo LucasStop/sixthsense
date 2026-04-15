@@ -122,6 +122,12 @@ extension ModuleGuide {
                 action: "Mão esquerda",
                 howTo: "Feche o punho da mão esquerda para segurar. Enquanto o punho estiver fechado, a direita arrasta o que estiver sob o cursor. Abra a mão para soltar."
             ),
+            GestureInfo(
+                name: "Rolar",
+                icon: "arrow.up.arrow.down",
+                action: "Mão esquerda",
+                howTo: "Estenda o indicador da mão esquerda apontando para cima ou para baixo. Quanto mais longe do pulso, mais rápido rola — volte ao centro para parar."
+            ),
         ],
         tips: [
             "Mantenha as mãos entre 30 e 60 cm da câmera para detecção estável.",

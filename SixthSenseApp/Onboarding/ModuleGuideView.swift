@@ -189,7 +189,6 @@ struct ModuleGuideView: View {
         Section(title: "Gestos", icon: "hand.tap") {
             LazyVGrid(columns: [
                 GridItem(.flexible()),
-                GridItem(.flexible()),
                 GridItem(.flexible())
             ], spacing: 12) {
                 ForEach(Array(guide.gestures.enumerated()), id: \.offset) { index, gesture in
@@ -240,6 +239,7 @@ struct ModuleGuideView: View {
         case 0: return .cyan
         case 1: return .pink
         case 2: return .orange
+        case 3: return .purple
         default: return .blue
         }
     }

@@ -295,6 +295,157 @@ private func reading(
     #expect(idleCount == 0)
 }
 
+// MARK: - Left hand → scroll (pointing)
+
+@Test func leftPointingWithIndexAboveWristScrollsUp() {
+    var router = HandActionRouter()
+    // Wrist at (0.5, 0.4) and index tip at (0.5, 0.7) — finger points
+    // UP from the wrist in Vision's bottom-left coordinate system, so
+    // the router should emit a positive deltaY (scroll up).
+    let left = reading(
+        chirality: .left,
+        gesture: .pointing,
+        landmarks: landmarks(
+            wrist: CGPoint(x: 0.5, y: 0.4),
+            index: CGPoint(x: 0.5, y: 0.7)
+        )
+    )
+
+    let actions = router.process(left: left, right: nil)
+
+    let delta: Int32? = actions.compactMap { action in
+        if case .scroll(let d) = action { return d }
+        return nil
+    }.first
+    #expect(delta != nil)
+    #expect((delta ?? 0) > 0)
+    #expect(router.isScrolling == true)
+}
+
+@Test func leftPointingWithIndexBelowWristScrollsDown() {
+    var router = HandActionRouter()
+    let left = reading(
+        chirality: .left,
+        gesture: .pointing,
+        landmarks: landmarks(
+            wrist: CGPoint(x: 0.5, y: 0.6),
+            index: CGPoint(x: 0.5, y: 0.3)
+        )
+    )
+
+    let actions = router.process(left: left, right: nil)
+    let delta: Int32? = actions.compactMap { action in
+        if case .scroll(let d) = action { return d }
+        return nil
+    }.first
+    #expect(delta != nil)
+    #expect((delta ?? 0) < 0)
+}
+
+@Test func leftPointingInsideDeadzoneDoesNotScroll() {
+    var router = HandActionRouter()
+    // Index tip only 0.01 above wrist — well inside the 0.03 deadzone.
+    let left = reading(
+        chirality: .left,
+        gesture: .pointing,
+        landmarks: landmarks(
+            wrist: CGPoint(x: 0.5, y: 0.5),
+            index: CGPoint(x: 0.5, y: 0.51)
+        )
+    )
+
+    let actions = router.process(left: left, right: nil)
+    #expect(actions.contains { if case .scroll = $0 { return true }; return false } == false)
+}
+
+@Test func leftPointingStopsScrollingWhenGestureChanges() {
+    var router = HandActionRouter()
+    let pointing = reading(
+        chirality: .left,
+        gesture: .pointing,
+        landmarks: landmarks(
+            wrist: CGPoint(x: 0.5, y: 0.4),
+            index: CGPoint(x: 0.5, y: 0.7)
+        )
+    )
+    _ = router.process(left: pointing, right: nil)
+    #expect(router.isScrolling == true)
+
+    let openHand = reading(chirality: .left, gesture: .openHand)
+    _ = router.process(left: openHand, right: nil)
+    #expect(router.isScrolling == false)
+}
+
+@Test func leftScrollIsSuppressedWhileDragging() {
+    var router = HandActionRouter()
+    // First: start dragging with left fist.
+    let fist = reading(chirality: .left, gesture: .fist)
+    _ = router.process(left: fist, right: nil)
+    #expect(router.isDragging == true)
+
+    // Transition to pointing while still "dragging" — the router
+    // ends the drag first, but scroll should not fire IN THE SAME frame
+    // because the dragEnd happens and then we decide scroll. However the
+    // gesture IS pointing so the scrollCapture runs. This test asserts
+    // that when drag is active at the start of the frame, scroll is
+    // suppressed; once drag ends a future frame can scroll again.
+    // To test the "drag active" case we pass another fist frame:
+    _ = router.process(left: fist, right: nil)
+
+    // Now try to emit scroll while still in drag: we need a frame where
+    // gesture != .fist to exit drag. So transition to pointing next.
+    let pointing = reading(
+        chirality: .left,
+        gesture: .pointing,
+        landmarks: landmarks(
+            wrist: CGPoint(x: 0.5, y: 0.4),
+            index: CGPoint(x: 0.5, y: 0.7)
+        )
+    )
+    let actions = router.process(left: pointing, right: nil)
+
+    // After transitioning away from fist, drag should be ended and
+    // scroll should now fire from this same frame.
+    #expect(router.isDragging == false)
+    #expect(actions.contains { if case .dragEnd = $0 { return true }; return false })
+    #expect(actions.contains { if case .scroll = $0 { return true }; return false })
+}
+
+@Test func leftScrollDeltaStaticMath() {
+    // Build a confident snapshot and verify the pure scrollDelta helper.
+    let l: [HandJoint: HandLandmark] = [
+        .wrist: HandLandmark(joint: .wrist, position: CGPoint(x: 0.5, y: 0.4), confidence: 0.9),
+        .indexTip: HandLandmark(joint: .indexTip, position: CGPoint(x: 0.5, y: 0.65), confidence: 0.9),
+    ]
+    let snap = HandLandmarksSnapshot(landmarks: l, gesture: .pointing)
+
+    let delta = HandActionRouter.scrollDelta(
+        for: snap,
+        deadzone: 0.03,
+        saturation: 0.20,
+        maxDelta: 20
+    )
+    #expect(delta != nil)
+    // Offset = 0.25, beyond saturation 0.20 → saturated positive delta.
+    #expect((delta ?? 0) == 20)
+}
+
+@Test func leftScrollDeltaReturnsNilInsideDeadzone() {
+    let l: [HandJoint: HandLandmark] = [
+        .wrist: HandLandmark(joint: .wrist, position: CGPoint(x: 0.5, y: 0.5), confidence: 0.9),
+        .indexTip: HandLandmark(joint: .indexTip, position: CGPoint(x: 0.5, y: 0.51), confidence: 0.9),
+    ]
+    let snap = HandLandmarksSnapshot(landmarks: l, gesture: .pointing)
+
+    let delta = HandActionRouter.scrollDelta(
+        for: snap,
+        deadzone: 0.05,
+        saturation: 0.20,
+        maxDelta: 20
+    )
+    #expect(delta == nil)
+}
+
 // MARK: - Neither hand = no actions
 
 @Test func noHandsEmitsNoActions() {

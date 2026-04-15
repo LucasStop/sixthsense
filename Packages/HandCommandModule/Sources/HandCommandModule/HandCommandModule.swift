@@ -354,10 +354,12 @@ public final class HandCommandModule: SixthSenseModule {
                 let point = Self.screenPoint(from: normalized, in: size, deadzone: deadzone)
                 cursorController.leftMouseUp(at: point)
                 eventBus.emit(.handGestureDetected(.grab(phase: .ended, position: point)))
+            case .scroll(let deltaY):
+                cursorController.scroll(deltaY: deltaY, deltaX: 0)
 
             // Still disabled — keep the gesture set lean. These cases are
             // recognised at the type level but produce no output.
-            case .doubleClick, .scroll,
+            case .doubleClick,
                  .missionControl, .showDesktop,
                  .switchSpaceLeft, .switchSpaceRight,
                  .holdCommand, .releaseCommand:

@@ -239,6 +239,47 @@ private func reading(_ chirality: HandChirality, _ gesture: DetectedHandGesture,
     #expect(h.keyboard.calls.isEmpty)
 }
 
+// MARK: - Left hand scroll pipeline
+
+@Test @MainActor func pipelineLeftPointingUpCallsScroll() async throws {
+    let h = Harness.make()
+    try await h.module.start()
+
+    // Left hand in pointing with the index tip well above the wrist.
+    // Build the reading manually so we control the exact coordinates.
+    let landmarks: [HandJoint: HandLandmark] = [
+        .wrist:     HandLandmark(joint: .wrist,     position: CGPoint(x: 0.5, y: 0.4), confidence: 0.9),
+        .thumbTip:  HandLandmark(joint: .thumbTip,  position: CGPoint(x: 0.4, y: 0.5), confidence: 0.9),
+        .indexTip:  HandLandmark(joint: .indexTip,  position: CGPoint(x: 0.5, y: 0.7), confidence: 0.9),
+        .middleTip: HandLandmark(joint: .middleTip, position: CGPoint(x: 0.55, y: 0.55), confidence: 0.9),
+        .ringTip:   HandLandmark(joint: .ringTip,   position: CGPoint(x: 0.57, y: 0.53), confidence: 0.9),
+        .littleTip: HandLandmark(joint: .littleTip, position: CGPoint(x: 0.58, y: 0.50), confidence: 0.9),
+    ]
+    let pending = HandLandmarksSnapshot(landmarks: landmarks, gesture: .none)
+    let classified = HandGestureClassifier.classify(pending)
+    let snapshot = HandLandmarksSnapshot(
+        landmarks: landmarks,
+        gesture: classified
+    )
+
+    // Only proceed if the classifier agrees this is a pointing pose —
+    // otherwise the test is meaningless.
+    guard snapshot.gesture == .pointing else {
+        Issue.record("Classifier did not recognise the scroll test pose as .pointing (\(snapshot.gesture))")
+        return
+    }
+
+    let reading = HandReading(chirality: .left, snapshot: snapshot)
+    h.module.handleReadings([reading])
+
+    let scrolls = h.cursor.calls.filter { if case .scroll = $0 { return true }; return false }
+    #expect(!scrolls.isEmpty)
+    // Scroll up → positive deltaY.
+    if case .scroll(let dy, _) = scrolls.first! {
+        #expect(dy > 0)
+    }
+}
+
 // MARK: - Left hand drag pipeline
 
 @Test @MainActor func pipelineLeftFistCallsLeftMouseDown() async throws {

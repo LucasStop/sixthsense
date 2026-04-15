@@ -439,9 +439,13 @@ struct HandTrainingView: View {
             leftIcon = "hand.pinch.fill"
             leftDescription = "Clicando!"
             leftActive = true
+        } else if leftGesture == .pointing {
+            leftIcon = "arrow.up.arrow.down.circle.fill"
+            leftDescription = "Rolando..."
+            leftActive = true
         } else {
             leftIcon = "hand.pinch"
-            leftDescription = "Pinça = clicar   •   Punho = arrastar"
+            leftDescription = "Pinça clica   •   Punho arrasta   •   Aponta rola"
             leftActive = false
         }
 
@@ -478,13 +482,19 @@ struct HandTrainingView: View {
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.white.opacity(0.55))
 
-            HStack(alignment: .top, spacing: 14) {
-                legendItem(icon: "hand.point.up.left", color: .cyan,
-                           label: "Mover cursor", description: "Mão direita aponta")
-                legendItem(icon: "hand.pinch", color: .pink,
-                           label: "Clicar", description: "Mão esquerda faz pinça")
-                legendItem(icon: "hand.raised.fill", color: .orange,
-                           label: "Arrastar", description: "Mão esquerda fecha o punho")
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .top, spacing: 14) {
+                    legendItem(icon: "hand.point.up.left", color: .cyan,
+                               label: "Mover cursor", description: "Mão direita aponta")
+                    legendItem(icon: "hand.pinch", color: .pink,
+                               label: "Clicar", description: "Mão esquerda faz pinça")
+                }
+                HStack(alignment: .top, spacing: 14) {
+                    legendItem(icon: "hand.raised.fill", color: .orange,
+                               label: "Arrastar", description: "Mão esquerda fecha o punho")
+                    legendItem(icon: "arrow.up.arrow.down", color: .purple,
+                               label: "Rolar", description: "Mão esquerda aponta pra cima/baixo")
+                }
             }
         }
     }
