@@ -254,3 +254,80 @@ private func handSnapshot(
     )
     #expect(HandGestureClassifier.classify(snap) == .fist)
 }
+
+// MARK: - Occluded-fingertip fallback for closed fists
+
+/// Helper that builds a snapshot with confident MCPs but missing or
+/// low-confidence fingertips — the shape Vision returns when the user
+/// makes a real closed fist and the tips vanish behind the palm.
+private func closedFistSnapshot(
+    wrist: CGPoint = .zero,
+    mcpDistance: CGFloat = 0.15
+) -> HandLandmarksSnapshot {
+    let landmarks: [HandJoint: HandLandmark] = [
+        .wrist:     landmark(.wrist,     at: wrist),
+        .indexMCP:  landmark(.indexMCP,  at: CGPoint(x: wrist.x + mcpDistance * 0.4, y: wrist.y + mcpDistance)),
+        .middleMCP: landmark(.middleMCP, at: CGPoint(x: wrist.x + mcpDistance * 0.1, y: wrist.y + mcpDistance)),
+        .ringMCP:   landmark(.ringMCP,   at: CGPoint(x: wrist.x - mcpDistance * 0.1, y: wrist.y + mcpDistance)),
+        .littleMCP: landmark(.littleMCP, at: CGPoint(x: wrist.x - mcpDistance * 0.4, y: wrist.y + mcpDistance)),
+        // Fingertips present but at low confidence — the classifier
+        // must treat them as missing and take the fallback branch.
+        .thumbTip:  HandLandmark(joint: .thumbTip,  position: .zero, confidence: 0.05),
+        .indexTip:  HandLandmark(joint: .indexTip,  position: .zero, confidence: 0.05),
+        .middleTip: HandLandmark(joint: .middleTip, position: .zero, confidence: 0.05),
+        .ringTip:   HandLandmark(joint: .ringTip,   position: .zero, confidence: 0.05),
+        .littleTip: HandLandmark(joint: .littleTip, position: .zero, confidence: 0.05),
+    ]
+    return snapshot(landmarks)
+}
+
+@Test func classifierDetectsClosedFistWhenFingertipsAreOccluded() {
+    // The real-world case: user closes their fist tight enough that
+    // Vision loses confidence on the fingertips. Classifier sees wrist
+    // + MCPs with high confidence and the tips missing — must resolve
+    // to .fist, not .none, so Mission Control fires.
+    let snap = closedFistSnapshot()
+    #expect(HandGestureClassifier.classify(snap) == .fist)
+}
+
+@Test func classifierRejectsClosedFistWhenPalmTooSmall() {
+    // If the MCP cluster is tiny (fragmentary detection at frame edge),
+    // we must NOT classify as fist or fragments would spam commands.
+    let snap = closedFistSnapshot(mcpDistance: 0.01)
+    #expect(HandGestureClassifier.classify(snap) == .none)
+}
+
+@Test func classifierClosedFistFallbackRequiresThreeMcps() {
+    // Only two MCPs present — not enough palm signal to commit.
+    let snap = snapshot([
+        .wrist:     landmark(.wrist,     at: .zero),
+        .indexMCP:  landmark(.indexMCP,  at: CGPoint(x: 0.05, y: 0.15)),
+        .middleMCP: landmark(.middleMCP, at: CGPoint(x: 0.0,  y: 0.15)),
+        // ringMCP / littleMCP missing
+        .thumbTip:  HandLandmark(joint: .thumbTip,  position: .zero, confidence: 0.05),
+        .indexTip:  HandLandmark(joint: .indexTip,  position: .zero, confidence: 0.05),
+        .middleTip: HandLandmark(joint: .middleTip, position: .zero, confidence: 0.05),
+        .ringTip:   HandLandmark(joint: .ringTip,   position: .zero, confidence: 0.05),
+        .littleTip: HandLandmark(joint: .littleTip, position: .zero, confidence: 0.05),
+    ])
+    #expect(HandGestureClassifier.classify(snap) == .none)
+}
+
+@Test func classifierClosedFistFallbackDoesNotFireWhenTipsAreConfident() {
+    // MCPs present AND fingertips confident → normal classification
+    // path runs. This frame describes an open hand; must classify as
+    // openHand, not be hijacked by the fallback.
+    let snap = snapshot([
+        .wrist:     landmark(.wrist,     at: .zero),
+        .indexMCP:  landmark(.indexMCP,  at: CGPoint(x: 0.02,  y: 0.15)),
+        .middleMCP: landmark(.middleMCP, at: CGPoint(x: 0.0,   y: 0.15)),
+        .ringMCP:   landmark(.ringMCP,   at: CGPoint(x: -0.02, y: 0.15)),
+        .littleMCP: landmark(.littleMCP, at: CGPoint(x: -0.04, y: 0.15)),
+        .thumbTip:  landmark(.thumbTip,  at: CGPoint(x: 0.3, y: 0.3)),
+        .indexTip:  landmark(.indexTip,  at: CGPoint(x: 0.02,  y: 0.40)),
+        .middleTip: landmark(.middleTip, at: CGPoint(x: 0.0,   y: 0.42)),
+        .ringTip:   landmark(.ringTip,   at: CGPoint(x: -0.02, y: 0.40)),
+        .littleTip: landmark(.littleTip, at: CGPoint(x: -0.04, y: 0.38)),
+    ])
+    #expect(HandGestureClassifier.classify(snap) == .openHand)
+}
