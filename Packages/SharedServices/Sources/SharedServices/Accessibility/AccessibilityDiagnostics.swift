@@ -43,6 +43,28 @@ public enum AccessibilityDiagnostics {
         Bundle.main.executablePath ?? ProcessInfo.processInfo.arguments.first ?? "desconhecido"
     }
 
+    /// Absolute path of the running .app bundle when running as a proper
+    /// app (e.g. installed in ~/Applications/SixthSense.app), or `nil`
+    /// when the process is running as a raw SPM executable. This is what
+    /// the user should drag into System Settings → Accessibility; macOS
+    /// resolves the enclosed executable automatically and the permission
+    /// follows the bundle ID, not the deep Contents/MacOS/ path.
+    public static var bundlePath: String? {
+        let path = Bundle.main.bundlePath
+        // Bundle.main.bundlePath returns the enclosing directory for the
+        // executable even when there's no .app — filter that out so we
+        // only return "real" bundle paths.
+        return path.hasSuffix(".app") ? path : nil
+    }
+
+    /// The path that should be shown to the user in the "adicione isto
+    /// nos Ajustes" instructions — prefers the .app bundle when present
+    /// (the common installed case) and falls back to the raw executable
+    /// path otherwise (dev runs via swift run).
+    public static var preferredInstallablePath: String {
+        bundlePath ?? executablePath
+    }
+
     /// Bundle identifier of the running app, or `nil` if not set. SPM
     /// executables often ship without a proper bundle ID, which is itself
     /// a source of permission problems.
@@ -129,6 +151,16 @@ public enum AccessibilityDiagnostics {
         let pb = NSPasteboard.general
         pb.clearContents()
         pb.setString(executablePath, forType: .string)
+    }
+
+    /// Copy the preferred installable path to the pasteboard (the .app
+    /// bundle when available, the raw executable otherwise). This is the
+    /// path the user will paste into Finder's "Go to folder" before
+    /// dragging the selected item into Ajustes → Acessibilidade.
+    public static func copyPreferredPathToPasteboard() {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(preferredInstallablePath, forType: .string)
     }
 
     /// Open the Accessibility pane directly so the user can re-add the

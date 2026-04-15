@@ -134,13 +134,20 @@ struct SetupView: View {
         } else {
             HStack(spacing: 8) {
                 Button {
-                    AccessibilityDiagnostics.copyExecutablePathToPasteboard()
+                    AccessibilityDiagnostics.copyPreferredPathToPasteboard()
                     copiedPath = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
                         copiedPath = false
                     }
                 } label: {
-                    Label(copiedPath ? "Copiado!" : "Copiar caminho", systemImage: "doc.on.doc")
+                    Label(
+                        copiedPath
+                            ? "Copiado!"
+                            : (AccessibilityDiagnostics.bundlePath != nil
+                                ? "Copiar caminho do .app"
+                                : "Copiar caminho"),
+                        systemImage: "doc.on.doc"
+                    )
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.regular)
@@ -158,11 +165,19 @@ struct SetupView: View {
 
     private var pathHint: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Adicione este app em Ajustes do Sistema → Privacidade e Segurança → Acessibilidade:")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            if AccessibilityDiagnostics.bundlePath != nil {
+                Text("Em Ajustes do Sistema → Privacidade e Segurança → Acessibilidade, clique em \"+\" e adicione o SixthSense.app pelo Finder:")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("Adicione o executável deste binário em Ajustes do Sistema → Privacidade e Segurança → Acessibilidade:")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
-            Text(AccessibilityDiagnostics.executablePath)
+            Text(AccessibilityDiagnostics.preferredInstallablePath)
                 .font(.system(size: 10, design: .monospaced))
                 .foregroundStyle(.primary)
                 .lineLimit(2)

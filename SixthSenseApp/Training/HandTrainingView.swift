@@ -288,7 +288,11 @@ struct HandTrainingView: View {
             VStack(alignment: .leading, spacing: 4) {
                 stepLine("1.", "Abra Ajustes do Sistema → Privacidade → Acessibilidade.")
                 stepLine("2.", "REMOVA toda entrada \"SixthSense\" existente (clique \"-\").")
-                stepLine("3.", "Clique em \"+\" e adicione o binário com o caminho abaixo.")
+                if AccessibilityDiagnostics.bundlePath != nil {
+                    stepLine("3.", "Clique em \"+\" e adicione o SixthSense.app pelo Finder.")
+                } else {
+                    stepLine("3.", "Clique em \"+\" e adicione o binário com o caminho abaixo.")
+                }
                 stepLine("4.", "Reative o HandCommand. Os gestos devem funcionar.")
             }
 
@@ -296,7 +300,7 @@ struct HandTrainingView: View {
                 Image(systemName: "doc.on.doc")
                     .foregroundStyle(.white.opacity(0.5))
                     .font(.caption)
-                Text(AccessibilityDiagnostics.executablePath)
+                Text(AccessibilityDiagnostics.preferredInstallablePath)
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.8))
                     .lineLimit(2)
@@ -309,14 +313,21 @@ struct HandTrainingView: View {
 
             HStack(spacing: 8) {
                 Button {
-                    AccessibilityDiagnostics.copyExecutablePathToPasteboard()
+                    AccessibilityDiagnostics.copyPreferredPathToPasteboard()
                     copiedPath = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                         copiedPath = false
                     }
                 } label: {
-                    Label(copiedPath ? "Copiado!" : "Copiar caminho", systemImage: "doc.on.clipboard")
-                        .font(.caption)
+                    Label(
+                        copiedPath
+                            ? "Copiado!"
+                            : (AccessibilityDiagnostics.bundlePath != nil
+                                ? "Copiar caminho do .app"
+                                : "Copiar caminho"),
+                        systemImage: "doc.on.clipboard"
+                    )
+                    .font(.caption)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
