@@ -584,122 +584,183 @@ private func simulateLeftIndexPath(
     })
 }
 
-// MARK: - Right fist held → Mission Control
+// MARK: - Right wrist upward swipe → Mission Control
 
-@Test func rightFistBelowHoldDurationDoesNotFire() {
+/// Helper: build a right-hand reading with the wrist planted at a specific
+/// y position. Other landmarks default to (0.5, 0.5) which is fine because
+/// the swipe detector only looks at the wrist.
+private func rightHandWithWrist(y: Double, gesture: DetectedHandGesture = .openHand) -> HandReading {
+    reading(
+        chirality: .right,
+        gesture: gesture,
+        landmarks: landmarks(wrist: CGPoint(x: 0.5, y: y))
+    )
+}
+
+@Test func stationaryRightHandDoesNotFireMissionControl() {
     var router = HandActionRouter()
-    let rightFist = reading(chirality: .right, gesture: .fist)
+    let t0 = Date()
 
-    // A single frame in the fist pose — nowhere near the 400ms hold.
-    let actions = router.process(left: nil, right: rightFist)
+    // 10 frames of wrist perfectly still — no swipe detected.
+    for i in 0..<10 {
+        let hand = rightHandWithWrist(y: 0.45)
+        _ = router.process(
+            left: nil,
+            right: hand,
+            now: t0.addingTimeInterval(Double(i) * 0.05)
+        )
+    }
+
+    // Final check: no mission control fired during any frame.
+    let final = router.process(
+        left: nil,
+        right: rightHandWithWrist(y: 0.45),
+        now: t0.addingTimeInterval(0.5)
+    )
+    #expect(final.contains { if case .missionControl = $0 { return true }; return false } == false)
+}
+
+@Test func fastUpwardSwipeFiresMissionControl() {
+    var router = HandActionRouter()
+    let t0 = Date()
+
+    // Sweep the wrist from y=0.3 to y=0.85 over 200ms — ~2.75 u/s,
+    // well above the default 1.8 threshold. Mission Control may fire
+    // on any of these frames (likely the one that first crosses the
+    // minSamples = 3 buffer threshold), so we collect actions across
+    // the whole motion and assert on the combined set.
+    var all: [HandAction] = []
+    all += router.process(left: nil, right: rightHandWithWrist(y: 0.30), now: t0)
+    all += router.process(left: nil, right: rightHandWithWrist(y: 0.50), now: t0.addingTimeInterval(0.07))
+    all += router.process(left: nil, right: rightHandWithWrist(y: 0.68), now: t0.addingTimeInterval(0.14))
+    all += router.process(left: nil, right: rightHandWithWrist(y: 0.85), now: t0.addingTimeInterval(0.20))
+
+    #expect(all.contains { if case .missionControl = $0 { return true }; return false })
+}
+
+@Test func upwardSwipeFiresRegardlessOfPose() {
+    // The swipe is pose-independent. Whether the user's right hand is
+    // pointing, open, pinching, or even in a fist, the wrist velocity
+    // alone must trigger Mission Control.
+    let poses: [DetectedHandGesture] = [.pointing, .openHand, .pinch, .fist, .none]
+
+    for pose in poses {
+        var router = HandActionRouter()
+        let t0 = Date()
+        var all: [HandAction] = []
+        all += router.process(left: nil, right: rightHandWithWrist(y: 0.30, gesture: pose), now: t0)
+        all += router.process(left: nil, right: rightHandWithWrist(y: 0.50, gesture: pose), now: t0.addingTimeInterval(0.07))
+        all += router.process(left: nil, right: rightHandWithWrist(y: 0.68, gesture: pose), now: t0.addingTimeInterval(0.14))
+        all += router.process(left: nil, right: rightHandWithWrist(y: 0.85, gesture: pose), now: t0.addingTimeInterval(0.20))
+        #expect(
+            all.contains { if case .missionControl = $0 { return true }; return false },
+            "Upward swipe should fire Mission Control in \(pose) pose"
+        )
+    }
+}
+
+@Test func slowUpwardDriftDoesNotFireMissionControl() {
+    // ~0.1 units over 0.25s = 0.4 u/s, below the 1.8 threshold.
+    // The user is just moving the cursor upward normally, not swiping.
+    var router = HandActionRouter()
+    let t0 = Date()
+
+    _ = router.process(left: nil, right: rightHandWithWrist(y: 0.40), now: t0)
+    _ = router.process(left: nil, right: rightHandWithWrist(y: 0.43), now: t0.addingTimeInterval(0.08))
+    _ = router.process(left: nil, right: rightHandWithWrist(y: 0.46), now: t0.addingTimeInterval(0.16))
+    let actions = router.process(
+        left: nil,
+        right: rightHandWithWrist(y: 0.50),
+        now: t0.addingTimeInterval(0.25)
+    )
 
     #expect(actions.contains { if case .missionControl = $0 { return true }; return false } == false)
 }
 
-@Test func rightFistHeldForHoldDurationFiresMissionControl() {
+@Test func downwardSwipeDoesNotFireMissionControl() {
     var router = HandActionRouter()
-    let rightFist = reading(chirality: .right, gesture: .fist)
-
     let t0 = Date()
-    _ = router.process(left: nil, right: rightFist, now: t0)
-    // 300ms later, past the 250ms hold threshold.
+
+    _ = router.process(left: nil, right: rightHandWithWrist(y: 0.80), now: t0)
+    _ = router.process(left: nil, right: rightHandWithWrist(y: 0.60), now: t0.addingTimeInterval(0.07))
+    _ = router.process(left: nil, right: rightHandWithWrist(y: 0.40), now: t0.addingTimeInterval(0.14))
     let actions = router.process(
         left: nil,
-        right: rightFist,
-        now: t0.addingTimeInterval(0.3)
-    )
-
-    #expect(actions.contains { if case .missionControl = $0 { return true }; return false })
-}
-
-@Test func rightFistSurvivesBriefClassifierFlaps() {
-    // The real-world case that was killing Mission Control: the user
-    // holds a right fist but Vision drops the classification for a
-    // frame or two mid-hold. Without the grace period, each flap to
-    // .none resets rightFistEnteredAt and the hold never completes.
-    // With the grace period, short drops are treated as noise.
-    var router = HandActionRouter()
-    let rightFist = reading(chirality: .right, gesture: .fist)
-    let rightNone = reading(chirality: .right, gesture: .none)
-
-    let t0 = Date()
-    // Frame 1: fist at t0.
-    _ = router.process(left: nil, right: rightFist, now: t0)
-    // Frame 2 at t0+50ms: brief noise drop. Inside the 150ms grace
-    // window, so the hold timer is preserved.
-    _ = router.process(left: nil, right: rightNone, now: t0.addingTimeInterval(0.05))
-    // Frame 3 at t0+100ms: fist returns.
-    _ = router.process(left: nil, right: rightFist, now: t0.addingTimeInterval(0.1))
-    // Frame 4 at t0+280ms: past the 250ms hold threshold. MUST fire.
-    let actions = router.process(
-        left: nil,
-        right: rightFist,
-        now: t0.addingTimeInterval(0.28)
-    )
-
-    #expect(actions.contains { if case .missionControl = $0 { return true }; return false })
-}
-
-@Test func rightFistRealReleaseBeyondGraceResetsHold() {
-    // Sanity check: if the right hand stays NOT-fist longer than the
-    // grace period, the hold really does reset. This prevents the
-    // grace window from becoming a memory leak where any old fist
-    // still counts forever.
-    var router = HandActionRouter()
-    let rightFist = reading(chirality: .right, gesture: .fist)
-    let rightNone = reading(chirality: .right, gesture: .none)
-
-    let t0 = Date()
-    // Start a fist hold.
-    _ = router.process(left: nil, right: rightFist, now: t0)
-    // Release for 300ms — well past the 150ms grace period.
-    _ = router.process(left: nil, right: rightNone, now: t0.addingTimeInterval(0.3))
-    // Re-enter the fist. The hold should be starting fresh, so a
-    // single frame 50ms later must NOT fire.
-    let actions = router.process(
-        left: nil,
-        right: rightFist,
-        now: t0.addingTimeInterval(0.35)
+        right: rightHandWithWrist(y: 0.20),
+        now: t0.addingTimeInterval(0.20)
     )
 
     #expect(actions.contains { if case .missionControl = $0 { return true }; return false } == false)
 }
 
-@Test func rightFistHeldDoesNotRepeatMissionControl() {
+@Test func secondSwipeWithinDebounceIsSwallowed() {
     var router = HandActionRouter()
-    let rightFist = reading(chirality: .right, gesture: .fist)
-
     let t0 = Date()
-    _ = router.process(left: nil, right: rightFist, now: t0)
-    // First fire at 0.45s.
-    _ = router.process(left: nil, right: rightFist, now: t0.addingTimeInterval(0.45))
-    // Continue holding — must NOT fire again while the fist is still down.
-    let later = router.process(left: nil, right: rightFist, now: t0.addingTimeInterval(0.8))
 
-    #expect(later.contains { if case .missionControl = $0 { return true }; return false } == false)
+    // First swipe — collect all actions across the motion so Mission
+    // Control is caught regardless of which frame fires it.
+    var first: [HandAction] = []
+    first += router.process(left: nil, right: rightHandWithWrist(y: 0.30), now: t0)
+    first += router.process(left: nil, right: rightHandWithWrist(y: 0.50), now: t0.addingTimeInterval(0.07))
+    first += router.process(left: nil, right: rightHandWithWrist(y: 0.68), now: t0.addingTimeInterval(0.14))
+    first += router.process(left: nil, right: rightHandWithWrist(y: 0.85), now: t0.addingTimeInterval(0.20))
+    #expect(first.contains { if case .missionControl = $0 { return true }; return false })
+
+    // Second swipe 300ms later — well within the 1s debounce, so even
+    // a legitimate upward motion must be ignored on every frame.
+    var second: [HandAction] = []
+    second += router.process(left: nil, right: rightHandWithWrist(y: 0.30), now: t0.addingTimeInterval(0.50))
+    second += router.process(left: nil, right: rightHandWithWrist(y: 0.50), now: t0.addingTimeInterval(0.57))
+    second += router.process(left: nil, right: rightHandWithWrist(y: 0.68), now: t0.addingTimeInterval(0.64))
+    second += router.process(left: nil, right: rightHandWithWrist(y: 0.85), now: t0.addingTimeInterval(0.70))
+    #expect(second.contains { if case .missionControl = $0 { return true }; return false } == false)
 }
 
-@Test func rightFistReleaseAndReEnterFiresAgain() {
+@Test func swipeAfterDebounceExpiredFiresAgain() {
     var router = HandActionRouter()
-    let rightFist = reading(chirality: .right, gesture: .fist)
-    let rightOpen = reading(chirality: .right, gesture: .openHand)
-
     let t0 = Date()
-    _ = router.process(left: nil, right: rightFist, now: t0)
-    _ = router.process(left: nil, right: rightFist, now: t0.addingTimeInterval(0.3))
-    // Release the fist — hold for longer than the 150ms grace window
-    // so the state really clears (this is a real release, not noise).
-    _ = router.process(left: nil, right: rightOpen, now: t0.addingTimeInterval(0.5))
-    _ = router.process(left: nil, right: rightOpen, now: t0.addingTimeInterval(1.0))
-    // Re-enter after the debounce window (1s) expires.
-    _ = router.process(left: nil, right: rightFist, now: t0.addingTimeInterval(1.3))
+
+    // First swipe — consume it with `_ =` since we don't assert on it,
+    // but we still need to drive the router through each frame.
+    _ = router.process(left: nil, right: rightHandWithWrist(y: 0.30), now: t0)
+    _ = router.process(left: nil, right: rightHandWithWrist(y: 0.50), now: t0.addingTimeInterval(0.07))
+    _ = router.process(left: nil, right: rightHandWithWrist(y: 0.68), now: t0.addingTimeInterval(0.14))
+    _ = router.process(left: nil, right: rightHandWithWrist(y: 0.85), now: t0.addingTimeInterval(0.20))
+
+    // Second swipe >1s later — debounce expired, fires fresh somewhere
+    // in the 4-frame window.
+    var second: [HandAction] = []
+    second += router.process(left: nil, right: rightHandWithWrist(y: 0.30), now: t0.addingTimeInterval(1.50))
+    second += router.process(left: nil, right: rightHandWithWrist(y: 0.50), now: t0.addingTimeInterval(1.57))
+    second += router.process(left: nil, right: rightHandWithWrist(y: 0.68), now: t0.addingTimeInterval(1.64))
+    second += router.process(left: nil, right: rightHandWithWrist(y: 0.85), now: t0.addingTimeInterval(1.70))
+    #expect(second.contains { if case .missionControl = $0 { return true }; return false })
+}
+
+@Test func rightHandDisappearingClearsTheSwipeBuffer() {
+    // If the right hand goes out of frame mid-swipe, its samples must
+    // be discarded so the motion doesn't "resume" when the hand
+    // reappears from a different position.
+    var router = HandActionRouter()
+    let t0 = Date()
+
+    // Partial swipe.
+    _ = router.process(left: nil, right: rightHandWithWrist(y: 0.30), now: t0)
+    _ = router.process(left: nil, right: rightHandWithWrist(y: 0.50), now: t0.addingTimeInterval(0.07))
+
+    // Hand disappears for a moment.
+    _ = router.process(left: nil, right: nil, now: t0.addingTimeInterval(0.14))
+
+    // Hand reappears already high up — without the reset this looked
+    // like a continuation of the earlier motion; with the reset it's
+    // a single stationary frame and cannot trigger.
     let actions = router.process(
         left: nil,
-        right: rightFist,
-        now: t0.addingTimeInterval(1.6)
+        right: rightHandWithWrist(y: 0.85),
+        now: t0.addingTimeInterval(0.21)
     )
 
-    #expect(actions.contains { if case .missionControl = $0 { return true }; return false })
+    #expect(actions.contains { if case .missionControl = $0 { return true }; return false } == false)
 }
 
 @Test func rightFistDoesNotStartADrag() {

@@ -132,7 +132,7 @@ extension ModuleGuide {
                 name: "Mission Control",
                 icon: "rectangle.on.rectangle",
                 action: "Mão direita",
-                howTo: "Feche o punho direito e segure por cerca de meio segundo. O macOS abre o Mission Control (equivalente a Ctrl+↑ ou F3) mostrando todas as janelas e Spaces. Abra a mão direita e feche de novo para disparar outra vez — o hold evita disparos acidentais quando a mão passa perto do punho por um frame."
+                howTo: "Faça um movimento rápido e deliberado da mão direita para cima, como se estivesse dando um flick com o pulso em direção ao topo da tela. O macOS abre o Mission Control (equivalente a Ctrl+↑ ou F3) mostrando todas as janelas e Spaces. Gestos lentos (movimento normal do cursor) não disparam — só um swipe rápido cruza o limite de velocidade. Espera cerca de 1s entre swipes para poder disparar outra vez."
             ),
             GestureInfo(
                 name: "Trocar app (⌘+Tab)",
