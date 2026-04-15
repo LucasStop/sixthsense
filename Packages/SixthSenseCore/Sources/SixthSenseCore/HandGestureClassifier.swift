@@ -36,14 +36,41 @@ public enum HandGestureClassifier {
     // MARK: - Classify
 
     public static func classify(_ snapshot: HandLandmarksSnapshot) -> DetectedHandGesture {
-        // We need wrist + all five fingertips at reasonable confidence.
-        let required: [HandJoint] = [.wrist] + HandJoint.fingertips
+        // Wrist is always required — without it we can't compute anything.
+        guard let wrist = snapshot.position(of: .wrist),
+              snapshot.landmarks[.wrist]?.isConfident == true else {
+            return .none
+        }
+
+        // Closed-hand fallback: when most of the fingertips are missing
+        // or low-confidence BUT the MCPs (finger bases) are present,
+        // Vision is telling us "I see the palm but the fingers are
+        // tucked into it" — that's a fist with the fingertips occluded.
+        // This fires BEFORE the fingertip-confidence gate so real closed
+        // fists (right or left) don't collapse into `.none`.
+        let mcps: [HandJoint] = [.indexMCP, .middleMCP, .ringMCP, .littleMCP]
+        let confidentMCPs = mcps.filter { snapshot.landmarks[$0]?.isConfident == true }.count
+        let confidentTips = HandJoint.fingertips.filter {
+            snapshot.landmarks[$0]?.isConfident == true
+        }.count
+        // 3+ MCPs visible but fewer than 3 fingertips visible → closed hand.
+        // Also require the MCP cluster to be reasonably large so a tiny
+        // noise fragment doesn't masquerade as a fist.
+        if confidentMCPs >= 3 && confidentTips < 3 {
+            let mcpExtent = mcpBoundingExtent(snapshot: snapshot, mcps: mcps, wrist: wrist)
+            if mcpExtent > minHandSize {
+                return .fist
+            }
+            return .none
+        }
+
+        // From here on we need the full fingertip set with real confidence.
+        let required: [HandJoint] = HandJoint.fingertips
         guard snapshot.hasConfidentJoints(required) else {
             return .none
         }
 
-        guard let wrist  = snapshot.position(of: .wrist),
-              let thumb  = snapshot.position(of: .thumbTip),
+        guard let thumb  = snapshot.position(of: .thumbTip),
               let index  = snapshot.position(of: .indexTip),
               let middle = snapshot.position(of: .middleTip),
               let ring   = snapshot.position(of: .ringTip),
@@ -117,5 +144,24 @@ public enum HandGestureClassifier {
     /// Euclidean distance between two normalized points.
     public static func distance(_ a: CGPoint, _ b: CGPoint) -> CGFloat {
         hypot(a.x - b.x, a.y - b.y)
+    }
+
+    /// Maximum distance between the wrist and any confident MCP joint —
+    /// our stand-in for "hand size" when we can't see the fingertips.
+    /// Used by the closed-hand fallback to reject tiny noise fragments.
+    private static func mcpBoundingExtent(
+        snapshot: HandLandmarksSnapshot,
+        mcps: [HandJoint],
+        wrist: CGPoint
+    ) -> CGFloat {
+        var maxExtent: CGFloat = 0
+        for joint in mcps {
+            guard let landmark = snapshot.landmarks[joint], landmark.isConfident else {
+                continue
+            }
+            let d = distance(wrist, landmark.position)
+            if d > maxExtent { maxExtent = d }
+        }
+        return maxExtent
     }
 }
