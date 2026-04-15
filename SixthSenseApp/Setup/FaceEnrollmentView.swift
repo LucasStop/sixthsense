@@ -304,14 +304,60 @@ struct FaceEnrollmentView: View {
     private var qualityIndicator: some View {
         let quality = faceRecognition.enrollmentQuality
         let visible = faceRecognition.enrollmentCurrentPose != nil
-        return HStack(spacing: 8) {
-            Image(systemName: visible ? qualityIcon(quality) : "face.dashed")
-                .font(.caption)
-                .foregroundStyle(visible ? qualityColor(quality) : .secondary)
-            Text(visible ? qualityText(quality) : "Procurando rosto...")
-                .font(.caption)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: visible ? qualityIcon(quality) : "face.dashed")
+                    .font(.caption)
+                    .foregroundStyle(visible ? qualityColor(quality) : .secondary)
+                Text(visible ? qualityText(quality) : "Procurando rosto...")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+
+            // Debug HUD — live yaw/pitch/quality readout so the user
+            // can see exactly what Vision is reporting. Makes it obvious
+            // when the camera has a natural tilt bias and helps tune
+            // the hit thresholds without guessing.
+            if visible {
+                HStack(spacing: 14) {
+                    poseReadout(
+                        label: "Yaw",
+                        value: faceRecognition.enrollmentCurrentPose?.yaw ?? 0
+                    )
+                    poseReadout(
+                        label: "Pitch",
+                        value: faceRecognition.enrollmentCurrentPose?.pitch ?? 0
+                    )
+                    poseReadout(
+                        label: "Qualidade",
+                        value: Double(quality * 100),
+                        suffix: "%"
+                    )
+                    if let target = faceRecognition.enrollmentCurrentTarget {
+                        let distance = (faceRecognition.enrollmentCurrentPose ?? .center)
+                            .distance(to: target.angle)
+                        poseReadout(
+                            label: "Dist",
+                            value: distance,
+                            suffix: "°"
+                        )
+                    }
+                    Spacer()
+                }
+                .font(.system(size: 10, design: .monospaced))
+            }
+        }
+    }
+
+    private func poseReadout(label: String, value: Double, suffix: String = "°") -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(label)
+                .font(.system(size: 9))
                 .foregroundStyle(.secondary)
-            Spacer()
+            Text(String(format: "%+.1f\(suffix)", value))
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.85))
         }
     }
 

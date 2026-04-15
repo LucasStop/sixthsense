@@ -200,21 +200,28 @@ public final class FaceRecognitionManager: FaceGate {
     // MARK: - Guided enrollment flow
 
     /// Max angular distance (in degrees) the current pose can be from the
-    /// target before we accept it. 9° is generous enough that the user
-    /// doesn't have to land exactly on the target, while still tight
-    /// enough that the captured embeddings cover meaningful angles.
-    public var enrollmentHitRadius: Double = 9.0
+    /// target before we accept it. 10° is generous enough that the user
+    /// doesn't need surgical precision, while still tight enough to cover
+    /// meaningful pose variation across targets.
+    public var enrollmentHitRadius: Double = 10.0
 
     /// Minimum face capture quality accepted for enrollment, 0-1.
-    /// Vision scores typically range 0.3-0.9 depending on lighting and
-    /// pose; 0.35 accepts anything usable and filters out motion blur
-    /// or strong side-lighting.
-    public var enrollmentMinimumQuality: Float = 0.35
+    /// Vision scores typically range 0.25-0.9 depending on lighting and
+    /// pose; 0.25 accepts pretty much any usable frame and mostly just
+    /// filters out pure motion blur.
+    public var enrollmentMinimumQuality: Float = 0.25
 
     /// Minimum hold duration in seconds after hitting a target before we
-    /// commit the feature print. 100ms prevents drive-by captures but
-    /// still feels snappy.
-    public var enrollmentHoldDuration: TimeInterval = 0.10
+    /// commit the feature print. 80ms prevents drive-by captures while
+    /// still feeling responsive.
+    public var enrollmentHoldDuration: TimeInterval = 0.08
+
+    /// The "zero" pose captured when the first target (center) is hit.
+    /// All subsequent targets are compared against this baseline instead
+    /// of raw Vision values, which corrects for cameras mounted at the
+    /// top of the display reporting non-zero pitch when the user is
+    /// actually looking straight ahead.
+    public private(set) var enrollmentBaselinePose: FaceAngle?
 
     /// Start a guided enrollment session with the default 9-point ring.
     /// Replaces the old linear beginEnrollment.
@@ -228,6 +235,7 @@ public final class FaceRecognitionManager: FaceGate {
         enrollmentQuality = 0
         enrollmentBuffer = []
         enrollmentFaceBox = nil
+        enrollmentBaselinePose = nil
         holdStartTime = nil
         isEnrolling = true
 
@@ -251,6 +259,7 @@ public final class FaceRecognitionManager: FaceGate {
         enrollmentFaceBox = nil
         enrollmentCurrentPose = nil
         enrollmentQuality = 0
+        enrollmentBaselinePose = nil
         holdStartTime = nil
     }
 
@@ -344,6 +353,16 @@ public final class FaceRecognitionManager: FaceGate {
             options: [:]
         )
 
+        // Capture main-actor state up front so the background closure
+        // doesn't have to hop back just to read it.
+        let currentBaseline = enrollmentBaselinePose
+        let currentTarget = enrollmentTargets.indices.contains(enrollmentCurrentTargetIndex)
+            ? enrollmentTargets[enrollmentCurrentTargetIndex]
+            : nil
+        let isFirstTarget = (enrollmentCurrentTargetIndex == 0)
+        let hitRadius = enrollmentHitRadius
+        let minQuality = enrollmentMinimumQuality
+
         visionQueue.async { [weak self] in
             guard let self else { return }
             do {
@@ -363,7 +382,7 @@ public final class FaceRecognitionManager: FaceGate {
 
                 let yawRad = face.yaw?.doubleValue ?? 0
                 let pitchRad = face.pitch?.doubleValue ?? 0
-                let pose = FaceAngle(
+                let rawPose = FaceAngle(
                     yaw: yawRad * 180.0 / .pi,
                     pitch: pitchRad * 180.0 / .pi
                 )
@@ -371,13 +390,33 @@ public final class FaceRecognitionManager: FaceGate {
                 let quality: Float = (qualityRequest.results?.first as? VNFaceObservation)?
                     .faceCaptureQuality ?? 0
 
-                // Compute feature print lazily — only when the user is
-                // actually on target and stable, otherwise we burn CPU.
+                // Offset the raw pose by the baseline so that the UI and
+                // the target-matching math both operate in the user's
+                // natural coordinate system. Before baseline is set
+                // (target 0), we just use the raw pose — that's exactly
+                // what we want the user to "look straight ahead".
+                let displayPose: FaceAngle
+                if let baseline = currentBaseline {
+                    displayPose = FaceAngle(
+                        yaw: rawPose.yaw - baseline.yaw,
+                        pitch: rawPose.pitch - baseline.pitch
+                    )
+                } else {
+                    displayPose = rawPose
+                }
+
+                // On the center target we accept ANY reasonable pose as
+                // "on target" — we don't know the baseline yet, so
+                // asking the user to match (0, 0) raw would fail on Macs
+                // with camera tilt. Once we capture target 0 the baseline
+                // is set and subsequent targets use distance in the
+                // relative space.
                 let onTarget: Bool
-                if let target = self.enrollmentTargets.indices.contains(self.enrollmentCurrentTargetIndex)
-                    ? self.enrollmentTargets[self.enrollmentCurrentTargetIndex] : nil {
-                    onTarget = pose.distance(to: target.angle) <= self.enrollmentHitRadius &&
-                               quality >= self.enrollmentMinimumQuality
+                if isFirstTarget {
+                    onTarget = quality >= minQuality
+                } else if let target = currentTarget {
+                    onTarget = displayPose.distance(to: target.angle) <= hitRadius &&
+                               quality >= minQuality
                 } else {
                     onTarget = false
                 }
@@ -392,9 +431,13 @@ public final class FaceRecognitionManager: FaceGate {
 
                 Task { @MainActor in
                     self.enrollmentFaceBox = face.boundingBox
-                    self.enrollmentCurrentPose = pose
+                    self.enrollmentCurrentPose = displayPose
                     self.enrollmentQuality = quality
-                    self.applyEnrollmentCapture(onTarget: onTarget, print: capturedPrint)
+                    self.applyEnrollmentCapture(
+                        onTarget: onTarget,
+                        print: capturedPrint,
+                        rawPose: rawPose
+                    )
                 }
             } catch {
                 // Skip on Vision error.
@@ -405,14 +448,18 @@ public final class FaceRecognitionManager: FaceGate {
     /// Main-actor side of the enrollment state machine. Decides whether
     /// the current target has been satisfied (requires a sustained hold
     /// before committing the capture) and advances to the next one.
+    ///
+    /// The first target (center) captures `rawPose` as the baseline so
+    /// later targets can be measured relative to the user's natural
+    /// head orientation, compensating for camera tilt.
     private func applyEnrollmentCapture(
         onTarget: Bool,
-        print capturedPrint: VNFeaturePrintObservation?
+        print capturedPrint: VNFeaturePrintObservation?,
+        rawPose: FaceAngle
     ) {
         guard isEnrolling else { return }
 
         if !onTarget {
-            // Moved off target or quality dropped — reset the hold timer.
             holdStartTime = nil
             return
         }
@@ -426,9 +473,6 @@ public final class FaceRecognitionManager: FaceGate {
             return
         }
 
-        // Hold completed — commit the capture if we managed to compute
-        // a feature print for this frame. If the print is nil (rare),
-        // we reset and let the next frame try again.
         guard let capturedPrint else {
             holdStartTime = nil
             return
@@ -443,11 +487,19 @@ public final class FaceRecognitionManager: FaceGate {
             return
         }
 
+        // If this is the first target being captured, snapshot the raw
+        // pose as the baseline. From this point on every enrollment
+        // frame's displayPose is (rawPose - baseline), and
+        // `enrollmentCurrentPose` will read as roughly (0, 0) when the
+        // user is back at their neutral head position.
+        if enrollmentCurrentTargetIndex == 0 && enrollmentBaselinePose == nil {
+            enrollmentBaselinePose = rawPose
+        }
+
         enrollmentBuffer.append(capturedPrint)
         enrollmentCompletedIds.insert(target.id)
         holdStartTime = nil
 
-        // Advance to the next target, or finish.
         let next = enrollmentCurrentTargetIndex + 1
         if next < enrollmentTargets.count {
             enrollmentCurrentTargetIndex = next

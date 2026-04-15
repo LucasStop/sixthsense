@@ -161,19 +161,25 @@ public struct HandActionRouter: Sendable {
                 isDragging = false
             }
 
-            // Scroll — left hand pointing. Continuous as long as the
-            // gesture holds. Suppressed while dragging so the user
-            // can't accidentally emit scroll wheel events mid-drag.
-            if !isDragging, left.gesture == .pointing {
-                isScrolling = true
-                if let delta = Self.scrollDelta(
+            // Scroll — left hand with index tip meaningfully away from
+            // the wrist (vertically), as long as the user isn't pinching
+            // or making a fist. We deliberately DON'T require the
+            // classifier to report `.pointing` because that gesture is
+            // picky — users tend to leave the other fingers semi-bent and
+            // the classifier rejects the pose. Gating by geometry is much
+            // more forgiving and still produces a scroll signal only
+            // when the user actually raises or lowers their index finger.
+            if !isDragging,
+               left.gesture != .pinch,
+               left.gesture != .fist,
+               let delta = Self.scrollDelta(
                     for: left.snapshot,
                     deadzone: scrollDeadzone,
                     saturation: scrollSaturationDistance,
                     maxDelta: scrollMaxDelta
-                ) {
-                    actions.append(.scroll(deltaY: delta))
-                }
+               ) {
+                isScrolling = true
+                actions.append(.scroll(deltaY: delta))
             } else if isScrolling {
                 isScrolling = false
             }
