@@ -42,11 +42,18 @@ public enum HandAction: Sendable, Equatable {
 ///
 /// Current rules:
 ///
-///   • Right hand → always moves the cursor to the smoothed index-tip
-///     position, regardless of what gesture is classified. The smoothing
-///     is done by a `CursorSmoother` (One Euro Filter) so the cursor
-///     feels steady when the hand is still and responsive when it moves
-///     fast.
+///   • Right hand → cursor. Moves to the smoothed index-tip position
+///     whenever the hand is in a cursor-friendly pose. When the right
+///     hand closes into a fist the cursor FREEZES at its last position
+///     so brief misclassifications don't teleport the cursor into the
+///     palm.
+///
+///   • Right wrist swipe up → Mission Control. A deliberate fast upward
+///     motion of the right wrist (velocity above threshold over a 250ms
+///     window) fires `.missionControl`. Pose-independent — only the
+///     wrist velocity matters — so the user can be pointing, open-handed,
+///     or mid-pinch and the trigger still works. Debounced to one fire
+///     per second to prevent accidental re-triggers.
 ///
 ///   • Left hand pinch  → clicks at the last known cursor position the
 ///     moment it transitions into a `.pinch`. Sustained pinch does not
@@ -59,9 +66,13 @@ public enum HandAction: Sendable, Equatable {
 ///     The module reads `isDragging` to know whether to dispatch
 ///     `moveCursor` as `mouseMoved` or `leftMouseDragged`.
 ///
-/// Any other gesture is ignored. When either hand disappears, its
-/// tracking state resets so the next entry is a clean edge-trigger, and
-/// any active drag is ended safely.
+///   • Left hand circular motion → scroll wheel. Tracing a circle in the
+///     air with the left index tip produces `.scroll` pulses.
+///
+///   • Left hand shaka → Cmd+Tab (app switcher).
+///
+/// When either hand disappears, its tracking state resets so the next
+/// entry is a clean edge-trigger, and any active drag is ended safely.
 public struct HandActionRouter: Sendable {
 
     // MARK: - Tunables
@@ -76,22 +87,9 @@ public struct HandActionRouter: Sendable {
     /// re-enter the pose, which matches typical Cmd+Tab usage.
     public var appSwitcherDebounce: TimeInterval = 0.35
 
-    /// How long the right hand must be held in a fist pose before
-    /// Mission Control fires. Kept short so the user doesn't feel like
-    /// they're holding forever — the noise immunity comes from the
-    /// grace period below, not from a long hold.
-    public var missionControlHoldDuration: TimeInterval = 0.25
-
-    /// When the right hand flaps briefly out of `.fist` (single-frame
-    /// misclassification), we treat the hold as still alive if the
-    /// last fist observation was less than this long ago. Without this,
-    /// Vision dropping confidence on one frame resets the whole hold
-    /// and the user can never build up enough sustained time.
-    public var rightFistGracePeriod: TimeInterval = 0.15
-
     /// Minimum time between successive Mission Control triggers. Blocks
-    /// re-fires from the same continuous hold — the user has to
-    /// release the fist and enter it again before the next one.
+    /// back-to-back swipes from firing twice when the wrist bounces at
+    /// the peak of the upward motion.
     public var missionControlDebounce: TimeInterval = 1.0
 
     // MARK: - State
@@ -113,21 +111,10 @@ public struct HandActionRouter: Sendable {
     /// Timestamp of the last Mission Control emitted.
     private var lastMissionControlTime: Date?
 
-    /// Timestamp at which the right hand entered a fist pose, or `nil`
-    /// when the right hand is not currently in a fist. Used to compute
-    /// the hold duration before Mission Control fires.
-    private var rightFistEnteredAt: Date?
-
-    /// Timestamp of the most recent frame where the right hand was
-    /// classified as a fist. We use the gap between this and `now` to
-    /// decide whether a brief non-fist frame is classifier noise (keep
-    /// the hold alive) or a real release (reset the hold).
-    private var rightFistLastSeenAt: Date?
-
-    /// Whether Mission Control has already fired for the current
-    /// continuous fist hold. Clears when the right hand leaves the
-    /// fist pose, so the next entry can fire again.
-    private var rightFistFired: Bool = false
+    /// Detector for the right-wrist upward swipe gesture that triggers
+    /// Mission Control. Pose-independent — the wrist y velocity over a
+    /// short rolling window is the only signal.
+    private var rightSwipeDetector = UpwardSwipeDetector()
 
     /// Whether the user is currently holding the left fist (drag active).
     /// Exposed so HandCommandModule can decide whether moveCursor should
@@ -174,11 +161,10 @@ public struct HandActionRouter: Sendable {
 
         // Right hand → cursor movement. Moves with the index tip when the
         // hand is in a cursor-friendly pose, but FREEZES during a right
-        // fist so the user can hold the Mission Control trigger without
-        // the cursor being yanked toward the curled finger's position.
-        // The pause also gives the classifier a stable 400ms window to
-        // confirm the fist without the user's hand having to fight the
-        // cursor drift.
+        // fist so brief classifier misclassifications (where fingertips
+        // suddenly lose confidence and "collapse" toward the palm) don't
+        // teleport the cursor. The freeze is a stability feature, not
+        // a gesture trigger.
         if let right,
            right.gesture != .fist,
            let indexLandmark = right.snapshot.landmarks[.indexTip],
@@ -192,48 +178,33 @@ public struct HandActionRouter: Sendable {
             // fresh entry doesn't get dragged toward the stale position.
             smoother.reset()
         }
-        // Note: when right.gesture == .fist we intentionally skip the
-        // move AND leave the smoother untouched. lastRightIndexTip stays
-        // at the pre-fist location, so click/drag targets keep aiming
-        // at the spot the user was pointing at before closing their fist.
 
-        // Right fist held → Mission Control. The hold is robust against
-        // brief classifier drops: if the right hand flaps to something
-        // other than `.fist` for less than `rightFistGracePeriod`, we
-        // keep the hold alive. Only a sustained release (≥ grace period
-        // with no fist frame) clears the timer. This fixes the case
-        // where Vision loses confidence on the fingertips mid-hold.
-        let rightIsFist = right?.gesture == .fist
-        if rightIsFist {
-            if rightFistEnteredAt == nil {
-                rightFistEnteredAt = now
+        // Right wrist upward swipe → Mission Control. Feed the wrist y
+        // into the detector whenever the right hand is visible; the
+        // detector averages velocity across a 250ms window and fires
+        // exactly once per deliberate upward motion. Pose-independent:
+        // the user can be pointing, open-handed, mid-pinch, or even
+        // in a fist — the wrist landmark is tracked regardless.
+        if let right,
+           let wrist = right.snapshot.landmarks[.wrist],
+           wrist.isConfident {
+            rightSwipeDetector.observe(
+                y: Double(wrist.position.y),
+                at: now
+            )
+            if rightSwipeDetector.step() {
+                let longEnough = lastMissionControlTime
+                    .map { now.timeIntervalSince($0) >= missionControlDebounce } ?? true
+                if longEnough {
+                    actions.append(.missionControl)
+                    lastMissionControlTime = now
+                }
             }
-            rightFistLastSeenAt = now
-        } else if let lastSeen = rightFistLastSeenAt,
-                  now.timeIntervalSince(lastSeen) < rightFistGracePeriod {
-            // Still inside the grace window — the non-fist frame is
-            // treated as noise; keep the hold alive untouched.
-        } else {
-            // Real release (or never engaged). Reset everything.
-            rightFistEnteredAt = nil
-            rightFistLastSeenAt = nil
-            rightFistFired = false
-        }
-
-        // After updating the timers, check whether we crossed the hold
-        // threshold on this frame. This runs regardless of the current
-        // frame's pose so a noise frame inside the grace window still
-        // lets us fire as soon as the hold matures.
-        if let start = rightFistEnteredAt,
-           !rightFistFired,
-           now.timeIntervalSince(start) >= missionControlHoldDuration {
-            let longEnough = lastMissionControlTime
-                .map { now.timeIntervalSince($0) >= missionControlDebounce } ?? true
-            if longEnough {
-                actions.append(.missionControl)
-                lastMissionControlTime = now
-                rightFistFired = true
-            }
+        } else if right == nil {
+            // Right hand disappeared — clear the swipe buffer so the
+            // next entry starts fresh instead of extrapolating from
+            // stale samples.
+            rightSwipeDetector.reset()
         }
 
         // Left hand → drag (fist) + click (pinch) + scroll (circle) +
