@@ -239,65 +239,87 @@ private func reading(_ chirality: HandChirality, _ gesture: DetectedHandGesture,
     #expect(h.keyboard.calls.isEmpty)
 }
 
-// MARK: - Left hand scroll pipeline (swipe momentum)
+// MARK: - Left hand scroll pipeline (circular rotation)
 
-/// Build a minimal left-hand reading at a specific wrist Y, with an
-/// open-hand pose so the router's scroll gate accepts it. The detector
-/// only cares about wrist position — the fingers are just there to
-/// satisfy the snapshot shape.
-private func leftHandAt(_ y: Double) -> HandReading {
+/// Build a minimal left-hand reading with the INDEX tip at the given
+/// point, in an open-hand pose so the router's scroll gate accepts it.
+/// The other landmarks are dressed around the index so the snapshot
+/// looks plausible to the classifier.
+private func leftHandWithIndex(at tip: CGPoint) -> HandReading {
+    let wrist = CGPoint(x: tip.x, y: tip.y - 0.1)
     let joints: [HandJoint: HandLandmark] = [
-        .wrist:     HandLandmark(joint: .wrist,     position: CGPoint(x: 0.5, y: CGFloat(y)),         confidence: 0.9),
-        .thumbTip:  HandLandmark(joint: .thumbTip,  position: CGPoint(x: 0.3, y: CGFloat(y + 0.1)),   confidence: 0.9),
-        .indexTip:  HandLandmark(joint: .indexTip,  position: CGPoint(x: 0.4, y: CGFloat(y + 0.12)),  confidence: 0.9),
-        .middleTip: HandLandmark(joint: .middleTip, position: CGPoint(x: 0.5, y: CGFloat(y + 0.14)),  confidence: 0.9),
-        .ringTip:   HandLandmark(joint: .ringTip,   position: CGPoint(x: 0.6, y: CGFloat(y + 0.12)),  confidence: 0.9),
-        .littleTip: HandLandmark(joint: .littleTip, position: CGPoint(x: 0.7, y: CGFloat(y + 0.10)),  confidence: 0.9),
+        .wrist:     HandLandmark(joint: .wrist,     position: wrist,                                 confidence: 0.9),
+        .thumbTip:  HandLandmark(joint: .thumbTip,  position: CGPoint(x: wrist.x - 0.05, y: wrist.y + 0.06),  confidence: 0.9),
+        .indexTip:  HandLandmark(joint: .indexTip,  position: tip,                                   confidence: 0.9),
+        .middleTip: HandLandmark(joint: .middleTip, position: CGPoint(x: wrist.x + 0.01, y: wrist.y + 0.08),  confidence: 0.9),
+        .ringTip:   HandLandmark(joint: .ringTip,   position: CGPoint(x: wrist.x + 0.03, y: wrist.y + 0.07),  confidence: 0.9),
+        .littleTip: HandLandmark(joint: .littleTip, position: CGPoint(x: wrist.x + 0.05, y: wrist.y + 0.06),  confidence: 0.9),
     ]
     let snapshot = HandLandmarksSnapshot(landmarks: joints, gesture: .openHand)
     return HandReading(chirality: .left, snapshot: snapshot)
 }
 
-@Test @MainActor func pipelineFastUpwardFlickCallsScroll() async throws {
+@Test @MainActor func pipelineCounterClockwiseCircleCallsScroll() async throws {
     let h = Harness.make()
     try await h.module.start()
 
-    // Feed a fast upward flick (wrist moves from 0.3 to 0.7 in 5 frames
-    // ~83ms). The swipe detector should fire and emit scroll deltas.
-    for y in [0.3, 0.4, 0.5, 0.6, 0.7] {
-        h.module.handleReadings([leftHandAt(y)])
+    // Trace a counter-clockwise circle with the left index tip. We
+    // sleep a real ~20ms between frames so the router's clock sees a
+    // meaningful dt between samples — the CircularScrollDetector needs
+    // actual elapsed time to compute angular velocity.
+    let center = CGPoint(x: 0.5, y: 0.5)
+    let radius = 0.08
+    for i in 0..<24 {
+        let angle = 2.0 * .pi * Double(i) / 23.0
+        let tip = CGPoint(
+            x: center.x + CGFloat(radius * cos(angle)),
+            y: center.y + CGFloat(radius * sin(angle))
+        )
+        h.module.handleReadings([leftHandWithIndex(at: tip)])
+        try await Task.sleep(for: .milliseconds(20))
     }
 
     let scrolls = h.cursor.calls.filter { if case .scroll = $0 { return true }; return false }
     #expect(!scrolls.isEmpty)
 
-    // First scroll should be positive (up).
+    // CCW rotation has positive angular velocity → positive deltaY.
     for call in scrolls {
         if case .scroll(let dy, _) = call, dy > 0 {
             return  // pass
         }
     }
-    Issue.record("Expected at least one positive scroll delta after upward flick")
+    Issue.record("Expected at least one positive scroll delta during CCW rotation")
 }
 
 @Test @MainActor func pipelineStationaryLeftHandNeverScrolls() async throws {
     // The bug report case: user raises the left hand to bring it into
-    // the frame, holds it still, and the cursor-less/pose-agnostic
-    // gate would previously keep emitting "scroll up" forever. With
-    // the swipe detector, a stationary hand produces zero scrolls.
+    // the frame and holds it still. With the circular detector there's
+    // no rotation, so NO scroll calls should be emitted at all.
     let h = Harness.make()
     try await h.module.start()
 
-    // 20 frames all at the same wrist Y = 0.55.
-    for _ in 0..<20 {
-        h.module.handleReadings([leftHandAt(0.55)])
+    // 30 frames all at the same index position.
+    for _ in 0..<30 {
+        h.module.handleReadings([leftHandWithIndex(at: CGPoint(x: 0.5, y: 0.55))])
     }
 
-    // Some momentum MAY have been generated by the very first frame
-    // (because fromNone to on-screen is a big apparent delta), but after
-    // 20 steady frames the total number of scroll calls should be tiny.
     let scrolls = h.cursor.calls.filter { if case .scroll = $0 { return true }; return false }
-    #expect(scrolls.count <= 3)
+    #expect(scrolls.isEmpty)
+}
+
+@Test @MainActor func pipelineStraightLineDoesNotScroll() async throws {
+    // A straight vertical flick should NOT scroll — that's the whole
+    // point of the circular detector. Only a real rotation counts.
+    let h = Harness.make()
+    try await h.module.start()
+
+    for i in 0..<20 {
+        let y = 0.3 + 0.02 * Double(i)
+        h.module.handleReadings([leftHandWithIndex(at: CGPoint(x: 0.5, y: y))])
+    }
+
+    let scrolls = h.cursor.calls.filter { if case .scroll = $0 { return true }; return false }
+    #expect(scrolls.isEmpty)
 }
 
 // MARK: - Left hand drag pipeline

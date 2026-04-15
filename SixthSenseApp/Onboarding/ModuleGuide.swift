@@ -124,9 +124,9 @@ extension ModuleGuide {
             ),
             GestureInfo(
                 name: "Rolar",
-                icon: "arrow.up.arrow.down",
+                icon: "arrow.triangle.2.circlepath",
                 action: "Mão esquerda",
-                howTo: "Faça um flick vertical rápido com a mão esquerda, como se estivesse empurrando a página para cima ou para baixo. Cada flick gera um pulso de scroll com momentum que decai sozinho. Flicks sucessivos aceleram a rolagem."
+                howTo: "Trace um círculo no ar com o dedo indicador esquerdo, como se girasse uma roda de scroll invisível. Sentido anti-horário rola para cima; sentido horário rola para baixo. A velocidade do giro controla a velocidade da rolagem — quanto mais rápido você girar, mais rápido a página passa."
             ),
         ],
         tips: [

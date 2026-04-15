@@ -126,8 +126,8 @@ struct MenuBarView: View {
                        title: "Clicar", subtitle: "Mão esquerda pinça")
             gestureRow(icon: "hand.raised.fill", color: .orange,
                        title: "Arrastar", subtitle: "Mão esquerda punho")
-            gestureRow(icon: "arrow.up.arrow.down", color: .purple,
-                       title: "Rolar", subtitle: "Flick vertical com a esquerda")
+            gestureRow(icon: "arrow.triangle.2.circlepath", color: .purple,
+                       title: "Rolar", subtitle: "Círculo no ar com a esquerda")
         }
         .padding(12)
         .background(

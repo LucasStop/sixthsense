@@ -295,27 +295,50 @@ private func reading(
     #expect(idleCount == 0)
 }
 
-// MARK: - Left hand → scroll (swipe momentum)
+// MARK: - Left hand → scroll (circular rotation)
 
-/// Feeds a sequence of left-hand frames with the wrist at the given Y
-/// values into the router and returns all the scroll actions the router
-/// produced, in order.
+/// Generate N points along a circle of given radius around the given
+/// center, covering `totalAngle` radians starting from `startAngle`.
+/// Positive totalAngle = counter-clockwise.
+private func circlePoints(
+    count: Int,
+    radius: Double,
+    startAngle: Double = 0,
+    totalAngle: Double,
+    center: CGPoint = CGPoint(x: 0.5, y: 0.5)
+) -> [CGPoint] {
+    guard count > 1 else { return [] }
+    var result: [CGPoint] = []
+    for i in 0..<count {
+        let t = Double(i) / Double(count - 1)
+        let angle = startAngle + totalAngle * t
+        let x = Double(center.x) + radius * cos(angle)
+        let y = Double(center.y) + radius * sin(angle)
+        result.append(CGPoint(x: x, y: y))
+    }
+    return result
+}
+
+/// Feed the router a sequence of left-hand frames with the INDEX TIP at
+/// the given normalized positions. The wrist is placed below the centroid
+/// so the open-hand pose is geometrically plausible. Returns every scroll
+/// action emitted, in order.
 @discardableResult
-private func simulateLeftWristFlick(
+private func simulateLeftIndexPath(
     router: inout HandActionRouter,
-    yPositions: [Double],
+    points: [CGPoint],
     startingAt start: Date = Date(),
     frameInterval: TimeInterval = 1.0 / 60.0
 ) -> [Int32] {
     var deltas: [Int32] = []
-    for (index, y) in yPositions.enumerated() {
-        let t = start.addingTimeInterval(frameInterval * Double(index))
+    for (i, p) in points.enumerated() {
+        let t = start.addingTimeInterval(frameInterval * Double(i))
         let l = reading(
             chirality: .left,
             gesture: .openHand,
             landmarks: landmarks(
-                wrist: CGPoint(x: 0.5, y: CGFloat(y)),
-                index: CGPoint(x: 0.5, y: CGFloat(y + 0.05))
+                wrist: CGPoint(x: p.x, y: p.y - 0.1),
+                index: p
             )
         )
         let actions = router.process(left: l, right: nil, now: t)
@@ -330,99 +353,113 @@ private func simulateLeftWristFlick(
 
 @Test func idleLeftHandDoesNotScroll() {
     var router = HandActionRouter()
-    // Hold the wrist rock-steady at y = 0.5 for 10 frames. No velocity,
-    // no swipe, no scroll — even though the hand is "visible".
-    let deltas = simulateLeftWristFlick(
-        router: &router,
-        yPositions: Array(repeating: 0.5, count: 10)
-    )
+    // Hold the index tip rock-steady for 20 frames. No motion, no
+    // circle, no scroll — even though the hand is visible.
+    let stationary = Array(repeating: CGPoint(x: 0.5, y: 0.5), count: 20)
+    let deltas = simulateLeftIndexPath(router: &router, points: stationary)
     #expect(deltas.isEmpty)
     #expect(router.isScrolling == false)
 }
 
 @Test func raisedLeftHandWithoutMotionDoesNotScroll() {
-    // The original bug: user lifts the left hand to bring it into the
-    // frame. The raise itself is motion, but afterwards the hand is
-    // stationary — the detector should STOP emitting scrolls once the
-    // momentum from the raise decays away.
+    // The bug report case: user lifts the hand into the frame and
+    // holds it still. Without a circular motion, the detector must
+    // stay silent.
     var router = HandActionRouter()
 
-    // Raise phase: wrist goes from 0.2 to 0.6 over 6 frames. This may
-    // trigger a swipe because the velocity is high.
-    _ = simulateLeftWristFlick(
-        router: &router,
-        yPositions: [0.2, 0.3, 0.4, 0.5, 0.55, 0.6]
-    )
+    // Raise phase: index tip rises on a straight vertical line. A
+    // straight line is not a circle — the aspect-ratio guard rejects
+    // it, so no scrolls should fire.
+    let raise: [CGPoint] = [
+        CGPoint(x: 0.5, y: 0.2),
+        CGPoint(x: 0.5, y: 0.3),
+        CGPoint(x: 0.5, y: 0.4),
+        CGPoint(x: 0.5, y: 0.5),
+        CGPoint(x: 0.5, y: 0.55),
+        CGPoint(x: 0.5, y: 0.6),
+    ]
+    _ = simulateLeftIndexPath(router: &router, points: raise)
 
-    // Hold steady for 90 frames (1.5 seconds) — plenty of time for the
-    // momentum to decay below the minimum magnitude.
+    // Hold steady for 30 frames.
     let t = Date().addingTimeInterval(1.0)
-    _ = simulateLeftWristFlick(
+    _ = simulateLeftIndexPath(
         router: &router,
-        yPositions: Array(repeating: 0.6, count: 90),
+        points: Array(repeating: CGPoint(x: 0.5, y: 0.6), count: 30),
         startingAt: t
     )
 
-    // After 1.5 seconds of steady hand, the detector MUST be idle.
-    // If it isn't, the old bug is back: the hand's mere presence
-    // would keep scrolling the page forever.
     #expect(router.isScrolling == false)
 }
 
-@Test func upwardFlickProducesPositiveScroll() {
+@Test func routerCounterClockwiseCircleProducesPositiveScroll() {
     var router = HandActionRouter()
 
-    // A deliberate fast flick: wrist goes from 0.3 to 0.7 in 5 frames.
-    // At 60 FPS that's 0.4 units in ~83ms → velocity ~4.8 units/sec,
-    // well past the 1.2 threshold.
-    let deltas = simulateLeftWristFlick(
-        router: &router,
-        yPositions: [0.3, 0.4, 0.5, 0.6, 0.7]
+    // One full counter-clockwise revolution in 24 frames at 60fps
+    // (~0.4s, ω ≈ 15.7 rad/s). Well above the min velocity floor.
+    let loop = circlePoints(
+        count: 24,
+        radius: 0.08,
+        totalAngle: 2 * .pi
     )
+    let deltas = simulateLeftIndexPath(router: &router, points: loop)
 
     #expect(!deltas.isEmpty)
-    // At least one delta should be strictly positive (scroll up).
     #expect(deltas.contains { $0 > 0 })
 }
 
-@Test func downwardFlickProducesNegativeScroll() {
+@Test func routerClockwiseCircleProducesNegativeScroll() {
     var router = HandActionRouter()
 
-    // Opposite direction — wrist drops from 0.7 to 0.3.
-    let deltas = simulateLeftWristFlick(
-        router: &router,
-        yPositions: [0.7, 0.6, 0.5, 0.4, 0.3]
+    // One full clockwise revolution → negative deltas (scroll down).
+    let loop = circlePoints(
+        count: 24,
+        radius: 0.08,
+        totalAngle: -2 * .pi
     )
+    let deltas = simulateLeftIndexPath(router: &router, points: loop)
 
     #expect(!deltas.isEmpty)
     #expect(deltas.contains { $0 < 0 })
 }
 
-@Test func momentumDecaysAfterFlick() {
+@Test func routerStraightLineDoesNotScroll() {
     var router = HandActionRouter()
 
-    // Flick + hold steady — the momentum should keep emitting deltas
-    // for a few frames after the flick then fall silent.
-    let flickFrames = [0.3, 0.4, 0.5, 0.6, 0.7]
-    let holdFrames = Array(repeating: 0.7, count: 30)
-    let deltas = simulateLeftWristFlick(
-        router: &router,
-        yPositions: flickFrames + holdFrames
-    )
+    // A horizontal sweep. No circular component, so the detector's
+    // aspect-ratio check rejects it outright.
+    var sweep: [CGPoint] = []
+    for i in 0..<24 {
+        let t = Double(i) / 23.0
+        sweep.append(CGPoint(x: 0.3 + 0.4 * t, y: 0.5))
+    }
+    let deltas = simulateLeftIndexPath(router: &router, points: sweep)
+    #expect(deltas.isEmpty)
+    #expect(router.isScrolling == false)
+}
 
-    // The beginning of the sequence has scrolls; the end is quiet.
-    #expect(!deltas.isEmpty)
-    // isScrolling flips false once the momentum fully decays.
+@Test func rotationStoppedMeansRouterStopsScrolling() {
+    var router = HandActionRouter()
+
+    // Do one full loop, then hold steady. Once the window ages out,
+    // the detector has no angular motion and stops emitting.
+    let t0 = Date()
+    let loop = circlePoints(count: 24, radius: 0.08, totalAngle: 2 * .pi)
+    _ = simulateLeftIndexPath(router: &router, points: loop, startingAt: t0)
+
+    let holdStart = t0.addingTimeInterval(24 / 60.0)
+    let held = Array(repeating: loop.last!, count: 30)
+    _ = simulateLeftIndexPath(router: &router, points: held, startingAt: holdStart)
+
     #expect(router.isScrolling == false)
 }
 
 @Test func leftPinchSuppressesScroll() {
     var router = HandActionRouter()
-    // A pinch frame should reset the detector even with prior motion.
-    _ = simulateLeftWristFlick(
-        router: &router,
-        yPositions: [0.3, 0.4, 0.5, 0.6, 0.7]
-    )
+
+    // Rotate for a while, then pinch — the pinch must reset the
+    // detector and NOT emit any scroll on that frame.
+    let loop = circlePoints(count: 24, radius: 0.08, totalAngle: 2 * .pi)
+    _ = simulateLeftIndexPath(router: &router, points: loop)
 
     let pinch = reading(chirality: .left, gesture: .pinch)
     let actions = router.process(left: pinch, right: nil, now: Date().addingTimeInterval(0.5))
@@ -433,15 +470,13 @@ private func simulateLeftWristFlick(
 
 @Test func leftFistSuppressesScrollAndEntersDrag() {
     var router = HandActionRouter()
-    _ = simulateLeftWristFlick(
-        router: &router,
-        yPositions: [0.3, 0.4, 0.5, 0.6, 0.7]
-    )
+
+    let loop = circlePoints(count: 24, radius: 0.08, totalAngle: 2 * .pi)
+    _ = simulateLeftIndexPath(router: &router, points: loop)
 
     let fist = reading(chirality: .left, gesture: .fist)
     let actions = router.process(left: fist, right: nil, now: Date().addingTimeInterval(0.5))
 
-    // Fist must start drag and NOT emit scroll.
     #expect(actions.contains { if case .dragBegin = $0 { return true }; return false })
     #expect(actions.contains { if case .scroll = $0 { return true }; return false } == false)
     #expect(router.isDragging == true)

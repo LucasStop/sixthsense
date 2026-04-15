@@ -81,16 +81,16 @@ public struct HandActionRouter: Sendable {
     /// be dispatched as a plain mouseMoved or as a leftMouseDragged.
     public private(set) var isDragging: Bool = false
 
-    /// Whether a scroll momentum pulse is currently fading out. True
-    /// immediately after a flick and for as long as the momentum is
-    /// above the detector's minimum threshold.
+    /// Whether the circular scroll detector is currently emitting
+    /// pulses. Exposed so the training card can light up a "rolando"
+    /// indicator while the user is rotating.
     public var isScrolling: Bool {
         scrollDetector.isScrolling
     }
 
-    /// Impulse-based scroll: watches wrist vertical velocity and emits
-    /// decaying scroll pulses when a flick is detected.
-    private var scrollDetector = SwipeScrollDetector()
+    /// Circular scroll wheel: watches the left index tip trace a circle
+    /// in the air and converts the rotation speed into scroll deltas.
+    private var scrollDetector = CircularScrollDetector()
 
     /// One Euro Filter for the cursor x/y — smooths hand jitter while
     /// keeping intentional movement responsive.
@@ -149,26 +149,27 @@ public struct HandActionRouter: Sendable {
                 isDragging = false
             }
 
-            // Scroll — swipe-based. Feed the wrist Y to the detector
-            // whenever the left hand is visible and NOT in a drag or
-            // click pose. The detector watches for fast vertical flicks
-            // and emits decaying momentum pulses. A relaxed or lifted
-            // hand does nothing — only deliberate motion produces scroll.
+            // Scroll — circular motion. Feed the left index tip to the
+            // detector whenever the hand is visible and NOT in a drag
+            // or click pose. The detector watches for the tip tracing a
+            // loop in the air and emits scroll pulses proportional to
+            // the rotation speed. A stationary or linear-motion hand
+            // does nothing — only a real circle produces scroll.
             let scrollGestureAllowed =
                 !isDragging &&
                 left.gesture != .pinch &&
                 left.gesture != .fist
             if scrollGestureAllowed,
-               let wrist = left.snapshot.landmarks[.wrist]?.position {
-                scrollDetector.observe(wristY: Double(wrist.y), at: now)
+               let tip = left.snapshot.landmarks[.indexTip]?.position {
+                scrollDetector.observe(point: tip, at: now)
             } else {
                 // Suppressed gestures reset the detector so a click or
-                // drag can't leak into a stale momentum pulse.
+                // drag can't leak into a stale rotation reading.
                 scrollDetector.reset()
             }
 
-            // Always step the momentum after observing, so the decay
-            // runs even on frames where no new sample was fed.
+            // Step the detector to pull out the scroll delta for this
+            // frame (may be nil when the motion isn't circular enough).
             if let delta = scrollDetector.step(now: now) {
                 actions.append(.scroll(deltaY: delta))
             }
@@ -195,45 +196,12 @@ public struct HandActionRouter: Sendable {
                 actions.append(.dragEnd(at: lastRightIndexTip))
                 isDragging = false
             }
-            // Reset scroll momentum so a hand that's briefly out of
-            // frame can't leak an old flick into the next session.
+            // Reset scroll state so a hand briefly out of frame can't
+            // leak an old rotation into the next session.
             scrollDetector.reset()
             lastLeftGesture = .none
         }
 
         return actions
-    }
-
-    // MARK: - Scroll math
-
-    /// Computes the scroll wheel delta for a pointing hand. Returns
-    /// `nil` when the index tip is inside the deadzone (no scroll) or
-    /// when the required landmarks are missing.
-    ///
-    /// The algorithm is: measure the vertical distance from the wrist to
-    /// the index tip. Because Vision uses bottom-left origin, a higher
-    /// index Y means the finger is pointing UP from the wrist → scroll
-    /// UP (positive deltaY). Beyond `saturation` the magnitude caps at
-    /// `maxDelta`. Pure geometry — no side effects, fully testable.
-    static func scrollDelta(
-        for snapshot: HandLandmarksSnapshot,
-        deadzone: Double,
-        saturation: Double,
-        maxDelta: Int32
-    ) -> Int32? {
-        guard let wrist = snapshot.landmarks[.wrist]?.position,
-              let tip = snapshot.landmarks[.indexTip]?.position else {
-            return nil
-        }
-
-        // Vision: y increases upward. Positive offset = finger above
-        // wrist = scroll UP in macOS CGEvent terms (positive deltaY).
-        let offset = Double(tip.y - wrist.y)
-        if abs(offset) < deadzone { return nil }
-
-        let sign: Double = offset >= 0 ? 1.0 : -1.0
-        let magnitude = min((abs(offset) - deadzone) / max(saturation - deadzone, 0.001), 1.0)
-        let delta = Int32((Double(maxDelta) * magnitude * sign).rounded())
-        return delta == 0 ? nil : delta
     }
 }
