@@ -12,12 +12,12 @@ import SharedServicesMocks
 // End-to-end tests for the HandCommand pipeline.
 //
 // Current gesture set:
-//   • Right hand — moves the cursor using the smoothed index tip.
-//   • Right wrist upward swipe — fires Mission Control.
-//   • Left pinch  — click at the last known cursor position.
-//   • Left fist   — drag (dragBegin on entry, dragEnd on release).
-//   • Left circle — scroll wheel pulses.
-//   • Left shaka  — app switcher (Cmd+Tab).
+//   • Right hand   — moves the cursor using the smoothed index tip.
+//   • Right shaka  — fires Mission Control (edge-triggered).
+//   • Left pinch   — click at the last known cursor position.
+//   • Left fist    — drag (dragBegin on entry, dragEnd on release).
+//   • Left circle  — scroll wheel pulses.
+//   • Left shaka   — app switcher (Cmd+Tab).
 //
 // Reserved actions on HandAction (doubleClick, showDesktop, switchSpace*,
 // holdCommand, releaseCommand) are intentionally not wired up and should
@@ -411,22 +411,16 @@ private func leftHandWithIndex(at tip: CGPoint) -> HandReading {
     #expect(scrollCount == 0)
 }
 
-// MARK: - Mission Control (right wrist swipe up) + Cmd+Tab (shaka)
+// MARK: - Mission Control (right shaka) + Cmd+Tab (left shaka)
 
-@Test @MainActor func pipelineRightWristSwipeUpPressesCtrlUpArrow() async throws {
+@Test @MainActor func pipelineRightShakaPressesCtrlUpArrow() async throws {
     let h = Harness.make()
     try await h.module.start()
 
-    // Feed a fast upward motion of the right wrist. Four frames over
-    // ~210ms with the wrist climbing from y=0.30 to y=0.85. Velocity
-    // ≈ 2.6 u/s, above the default 1.8 threshold.
-    h.module.handleReadings([reading(.right, .openHand, wrist: CGPoint(x: 0.5, y: 0.30))])
-    try await Task.sleep(for: .milliseconds(70))
-    h.module.handleReadings([reading(.right, .openHand, wrist: CGPoint(x: 0.5, y: 0.48))])
-    try await Task.sleep(for: .milliseconds(70))
-    h.module.handleReadings([reading(.right, .openHand, wrist: CGPoint(x: 0.5, y: 0.66))])
-    try await Task.sleep(for: .milliseconds(70))
-    h.module.handleReadings([reading(.right, .openHand, wrist: CGPoint(x: 0.5, y: 0.85))])
+    // Need a non-shaka frame first so the edge trigger fires on the
+    // transition into shaka (same pattern as the left shaka test).
+    h.module.handleReadings([reading(.right, .openHand)])
+    h.module.handleReadings([reading(.right, .shaka)])
 
     // kVK_UpArrow = 0x7E (126). Must be called with Ctrl modifier.
     let hasCtrlUp = h.keyboard.calls.contains { call in
@@ -438,33 +432,33 @@ private func leftHandWithIndex(at tip: CGPoint) -> HandReading {
     #expect(hasCtrlUp == true)
 }
 
-@Test @MainActor func pipelineSlowRightHandUpwardMotionDoesNotFireMissionControl() async throws {
-    // A slow drift upward (casual cursor movement) must NOT cross the
-    // velocity threshold. Protects against the user accidentally
-    // triggering Mission Control while aiming at screen-top items.
+@Test @MainActor func pipelineRightShakaHeldDoesNotSpamCtrlUp() async throws {
+    // Holding the shaka pose across multiple frames must only fire
+    // Mission Control once — the edge-trigger + debounce combination
+    // has to suppress the repeats.
     let h = Harness.make()
     try await h.module.start()
 
-    h.module.handleReadings([reading(.right, .pointing, wrist: CGPoint(x: 0.5, y: 0.30))])
-    try await Task.sleep(for: .milliseconds(80))
-    h.module.handleReadings([reading(.right, .pointing, wrist: CGPoint(x: 0.5, y: 0.33))])
-    try await Task.sleep(for: .milliseconds(80))
-    h.module.handleReadings([reading(.right, .pointing, wrist: CGPoint(x: 0.5, y: 0.36))])
-    try await Task.sleep(for: .milliseconds(80))
-    h.module.handleReadings([reading(.right, .pointing, wrist: CGPoint(x: 0.5, y: 0.40))])
+    h.module.handleReadings([reading(.right, .openHand)])
+    h.module.handleReadings([reading(.right, .shaka)])
+    h.module.handleReadings([reading(.right, .shaka)])
+    h.module.handleReadings([reading(.right, .shaka)])
+    h.module.handleReadings([reading(.right, .shaka)])
 
-    let hasCtrlUp = h.keyboard.calls.contains { call in
-        if case .press(let keyCode, _) = call { return keyCode == 0x7E }
+    let ctrlUpCount = h.keyboard.calls.filter { call in
+        if case .press(let keyCode, let modifiers) = call {
+            return keyCode == 0x7E && (modifiers & CGEventFlags.maskControl.rawValue) != 0
+        }
         return false
-    }
-    #expect(hasCtrlUp == false)
+    }.count
+    #expect(ctrlUpCount == 1, "Sustained right shaka must not spam Ctrl+Up")
 }
 
 @Test @MainActor func pipelineRightHandDoesBothActionsInSequence() async throws {
     // Full end-to-end verification that the right hand performs both
     // of its responsibilities:
     //   1. Cursor movement while in cursor-friendly poses (pointing).
-    //   2. Mission Control on a deliberate upward wrist swipe.
+    //   2. Mission Control on a shaka edge transition.
     // Both actions must survive in the same continuous session.
     let h = Harness.make()
     try await h.module.start()
@@ -480,17 +474,15 @@ private func leftHandWithIndex(at tip: CGPoint) -> HandReading {
     }.count
     #expect(movesAfterPointing == 3)
 
-    // Phase 2: perform a deliberate upward swipe with the right wrist.
-    // Four more frames at y=0.30 → 0.48 → 0.66 → 0.85 over 210ms.
-    // Mission Control (Ctrl+UpArrow) must fire, and since the hand is
-    // in a cursor-friendly pose the cursor keeps tracking the index tip.
-    h.module.handleReadings([reading(.right, .pointing, wrist: CGPoint(x: 0.5, y: 0.30))])
-    try await Task.sleep(for: .milliseconds(70))
-    h.module.handleReadings([reading(.right, .pointing, wrist: CGPoint(x: 0.5, y: 0.48))])
-    try await Task.sleep(for: .milliseconds(70))
-    h.module.handleReadings([reading(.right, .pointing, wrist: CGPoint(x: 0.5, y: 0.66))])
-    try await Task.sleep(for: .milliseconds(70))
-    h.module.handleReadings([reading(.right, .pointing, wrist: CGPoint(x: 0.5, y: 0.85))])
+    // Phase 2: transition from pointing into shaka. The edge trigger
+    // fires Mission Control (Ctrl+Up), and because the index is curled
+    // in the shaka pose the cursor must FREEZE (no new moveTo).
+    h.module.handleReadings([reading(.right, .shaka, wrist: CGPoint(x: 0.7, y: 0.3))])
+
+    let movesAfterShaka = h.cursor.calls.filter {
+        if case .moveTo = $0 { return true }; return false
+    }.count
+    #expect(movesAfterShaka == 3, "Cursor must freeze while right hand is in shaka")
 
     let missionControlFired = h.keyboard.calls.contains { call in
         if case .press(let keyCode, let modifiers) = call {
@@ -498,7 +490,16 @@ private func leftHandWithIndex(at tip: CGPoint) -> HandReading {
         }
         return false
     }
-    #expect(missionControlFired == true, "Right wrist swipe up must fire Ctrl+Up for Mission Control")
+    #expect(missionControlFired == true, "Right shaka edge transition must fire Ctrl+Up")
+
+    // Phase 3: release the shaka back to pointing. Cursor must resume
+    // movement from the new position.
+    h.module.handleReadings([reading(.right, .pointing, wrist: CGPoint(x: 0.4, y: 0.4))])
+
+    let movesAfterRelease = h.cursor.calls.filter {
+        if case .moveTo = $0 { return true }; return false
+    }.count
+    #expect(movesAfterRelease == 4, "Cursor must resume moving after shaka is released")
 }
 
 @Test @MainActor func pipelineRightFistDoesNotStartDrag() async throws {
@@ -553,12 +554,20 @@ private func leftHandWithIndex(at tip: CGPoint) -> HandReading {
 }
 
 @Test @MainActor func pipelineRightShakaDoesNotPressCmdTab() async throws {
+    // Right shaka fires Mission Control (Ctrl+Up), not Cmd+Tab —
+    // Cmd+Tab belongs to the LEFT shaka. This test guards against
+    // a regression where a right-hand shaka accidentally cycled apps.
     let h = Harness.make()
     try await h.module.start()
 
     h.module.handleReadings([reading(.right, .shaka)])
 
-    #expect(h.keyboard.calls.isEmpty)
+    // kVK_Tab = 0x30 (48). Right shaka must NOT press this keycode.
+    let pressedCmdTab = h.keyboard.calls.contains { call in
+        if case .press(let keyCode, _) = call { return keyCode == 0x30 }
+        return false
+    }
+    #expect(pressedCmdTab == false)
 }
 
 // MARK: - Per-gesture enable toggles
@@ -619,15 +628,10 @@ private func leftHandWithIndex(at tip: CGPoint) -> HandReading {
     h.module.missionControlEnabled = false
     try await h.module.start()
 
-    // Even with a full-speed upward swipe, the disabled flag must block
-    // the Ctrl+Up keystroke from being dispatched.
-    h.module.handleReadings([reading(.right, .openHand, wrist: CGPoint(x: 0.5, y: 0.30))])
-    try await Task.sleep(for: .milliseconds(70))
-    h.module.handleReadings([reading(.right, .openHand, wrist: CGPoint(x: 0.5, y: 0.48))])
-    try await Task.sleep(for: .milliseconds(70))
-    h.module.handleReadings([reading(.right, .openHand, wrist: CGPoint(x: 0.5, y: 0.66))])
-    try await Task.sleep(for: .milliseconds(70))
-    h.module.handleReadings([reading(.right, .openHand, wrist: CGPoint(x: 0.5, y: 0.85))])
+    // Even with a clean shaka edge transition, the disabled flag must
+    // block the Ctrl+Up keystroke from being dispatched.
+    h.module.handleReadings([reading(.right, .openHand)])
+    h.module.handleReadings([reading(.right, .shaka)])
 
     let hasCtrlUp = h.keyboard.calls.contains { call in
         if case .press(let keyCode, _) = call {

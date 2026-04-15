@@ -584,183 +584,137 @@ private func simulateLeftIndexPath(
     })
 }
 
-// MARK: - Right wrist upward swipe → Mission Control
+// MARK: - Right shaka → Mission Control
 
-/// Helper: build a right-hand reading with the wrist planted at a specific
-/// y position. Other landmarks default to (0.5, 0.5) which is fine because
-/// the swipe detector only looks at the wrist.
-private func rightHandWithWrist(y: Double, gesture: DetectedHandGesture = .openHand) -> HandReading {
-    reading(
-        chirality: .right,
-        gesture: gesture,
-        landmarks: landmarks(wrist: CGPoint(x: 0.5, y: y))
-    )
+@Test func rightShakaEdgeTriggerFiresMissionControl() {
+    // The very first frame where the right hand shows `.shaka` must
+    // emit `.missionControl`. The user hasn't been in shaka before,
+    // so there's no previous state to suppress the trigger.
+    var router = HandActionRouter()
+    let rightShaka = reading(chirality: .right, gesture: .shaka)
+
+    let actions = router.process(left: nil, right: rightShaka)
+
+    #expect(actions.contains { if case .missionControl = $0 { return true }; return false })
 }
 
-@Test func stationaryRightHandDoesNotFireMissionControl() {
+@Test func rightShakaHeldDoesNotRepeatMissionControl() {
+    // Sustained shaka holds must NOT spam the shortcut. Only the
+    // edge transition into shaka fires; subsequent frames in the
+    // same pose are suppressed by `lastRightGesture`.
     var router = HandActionRouter()
+    let rightShaka = reading(chirality: .right, gesture: .shaka)
     let t0 = Date()
 
-    // 10 frames of wrist perfectly still — no swipe detected.
-    for i in 0..<10 {
-        let hand = rightHandWithWrist(y: 0.45)
-        _ = router.process(
-            left: nil,
-            right: hand,
-            now: t0.addingTimeInterval(Double(i) * 0.05)
-        )
-    }
+    // First frame fires.
+    _ = router.process(left: nil, right: rightShaka, now: t0)
+    // Three more frames in the same pose must be silent.
+    let f2 = router.process(left: nil, right: rightShaka, now: t0.addingTimeInterval(0.1))
+    let f3 = router.process(left: nil, right: rightShaka, now: t0.addingTimeInterval(0.2))
+    let f4 = router.process(left: nil, right: rightShaka, now: t0.addingTimeInterval(0.3))
 
-    // Final check: no mission control fired during any frame.
-    let final = router.process(
-        left: nil,
-        right: rightHandWithWrist(y: 0.45),
-        now: t0.addingTimeInterval(0.5)
-    )
-    #expect(final.contains { if case .missionControl = $0 { return true }; return false } == false)
+    #expect(f2.contains { if case .missionControl = $0 { return true }; return false } == false)
+    #expect(f3.contains { if case .missionControl = $0 { return true }; return false } == false)
+    #expect(f4.contains { if case .missionControl = $0 { return true }; return false } == false)
 }
 
-@Test func fastUpwardSwipeFiresMissionControl() {
+@Test func rightShakaReleaseAndReEnterFiresAgain() {
+    // After the user leaves shaka and comes back past the debounce
+    // window, the next edge into shaka must fire again.
     var router = HandActionRouter()
+    let rightShaka = reading(chirality: .right, gesture: .shaka)
+    let rightOpen  = reading(chirality: .right, gesture: .openHand)
     let t0 = Date()
 
-    // Sweep the wrist from y=0.3 to y=0.85 over 200ms — ~2.75 u/s,
-    // well above the default 1.8 threshold. Mission Control may fire
-    // on any of these frames (likely the one that first crosses the
-    // minSamples = 3 buffer threshold), so we collect actions across
-    // the whole motion and assert on the combined set.
-    var all: [HandAction] = []
-    all += router.process(left: nil, right: rightHandWithWrist(y: 0.30), now: t0)
-    all += router.process(left: nil, right: rightHandWithWrist(y: 0.50), now: t0.addingTimeInterval(0.07))
-    all += router.process(left: nil, right: rightHandWithWrist(y: 0.68), now: t0.addingTimeInterval(0.14))
-    all += router.process(left: nil, right: rightHandWithWrist(y: 0.85), now: t0.addingTimeInterval(0.20))
+    // First shaka.
+    _ = router.process(left: nil, right: rightShaka, now: t0)
+    // Release.
+    _ = router.process(left: nil, right: rightOpen, now: t0.addingTimeInterval(0.2))
+    _ = router.process(left: nil, right: rightOpen, now: t0.addingTimeInterval(0.5))
+    // Wait past the debounce (1s).
+    _ = router.process(left: nil, right: rightOpen, now: t0.addingTimeInterval(1.1))
+    // Re-enter shaka.
+    let actions = router.process(left: nil, right: rightShaka, now: t0.addingTimeInterval(1.3))
 
-    #expect(all.contains { if case .missionControl = $0 { return true }; return false })
+    #expect(actions.contains { if case .missionControl = $0 { return true }; return false })
 }
 
-@Test func upwardSwipeFiresRegardlessOfPose() {
-    // The swipe is pose-independent. Whether the user's right hand is
-    // pointing, open, pinching, or even in a fist, the wrist velocity
-    // alone must trigger Mission Control.
+@Test func rightShakaWithinDebounceIsSwallowed() {
+    // Even a legitimate edge transition into shaka is suppressed if
+    // the previous Mission Control fired less than 1s ago.
+    var router = HandActionRouter()
+    let rightShaka = reading(chirality: .right, gesture: .shaka)
+    let rightOpen  = reading(chirality: .right, gesture: .openHand)
+    let t0 = Date()
+
+    // First shaka fires.
+    _ = router.process(left: nil, right: rightShaka, now: t0)
+    // Quick release and re-entry 300ms later, within debounce.
+    _ = router.process(left: nil, right: rightOpen, now: t0.addingTimeInterval(0.1))
+    let actions = router.process(left: nil, right: rightShaka, now: t0.addingTimeInterval(0.3))
+
+    #expect(actions.contains { if case .missionControl = $0 { return true }; return false } == false)
+}
+
+@Test func rightNonShakaPosesDoNotFireMissionControl() {
+    // Pointing, openHand, pinch, fist, and none must never produce
+    // Mission Control on their own — only shaka does.
     let poses: [DetectedHandGesture] = [.pointing, .openHand, .pinch, .fist, .none]
 
     for pose in poses {
         var router = HandActionRouter()
-        let t0 = Date()
-        var all: [HandAction] = []
-        all += router.process(left: nil, right: rightHandWithWrist(y: 0.30, gesture: pose), now: t0)
-        all += router.process(left: nil, right: rightHandWithWrist(y: 0.50, gesture: pose), now: t0.addingTimeInterval(0.07))
-        all += router.process(left: nil, right: rightHandWithWrist(y: 0.68, gesture: pose), now: t0.addingTimeInterval(0.14))
-        all += router.process(left: nil, right: rightHandWithWrist(y: 0.85, gesture: pose), now: t0.addingTimeInterval(0.20))
+        let hand = reading(chirality: .right, gesture: pose)
+        let actions = router.process(left: nil, right: hand)
         #expect(
-            all.contains { if case .missionControl = $0 { return true }; return false },
-            "Upward swipe should fire Mission Control in \(pose) pose"
+            actions.contains { if case .missionControl = $0 { return true }; return false } == false,
+            "\(pose) must not trigger Mission Control"
         )
     }
 }
 
-@Test func slowUpwardDriftDoesNotFireMissionControl() {
-    // ~0.1 units over 0.25s = 0.4 u/s, below the 1.8 threshold.
-    // The user is just moving the cursor upward normally, not swiping.
+@Test func rightShakaFreezesTheCursor() {
+    // Cursor movement is suppressed during right shaka (the index is
+    // curled in that pose and would not be a sensible cursor target).
     var router = HandActionRouter()
-    let t0 = Date()
 
-    _ = router.process(left: nil, right: rightHandWithWrist(y: 0.40), now: t0)
-    _ = router.process(left: nil, right: rightHandWithWrist(y: 0.43), now: t0.addingTimeInterval(0.08))
-    _ = router.process(left: nil, right: rightHandWithWrist(y: 0.46), now: t0.addingTimeInterval(0.16))
-    let actions = router.process(
-        left: nil,
-        right: rightHandWithWrist(y: 0.50),
-        now: t0.addingTimeInterval(0.25)
+    // First frame: pointing so the smoother has a valid position.
+    let pointing = reading(
+        chirality: .right,
+        gesture: .pointing,
+        landmarks: landmarks(index: CGPoint(x: 0.4, y: 0.4))
     )
+    _ = router.process(left: nil, right: pointing)
 
-    #expect(actions.contains { if case .missionControl = $0 { return true }; return false } == false)
+    // Second frame: shaka. Must NOT emit moveCursor.
+    let shaka = reading(chirality: .right, gesture: .shaka)
+    let actions = router.process(left: nil, right: shaka)
+
+    let hasMove = actions.contains {
+        if case .moveCursor = $0 { return true }; return false
+    }
+    #expect(hasMove == false)
 }
 
-@Test func downwardSwipeDoesNotFireMissionControl() {
+@Test func rightHandDisappearingResetsShakaEdgeTrigger() {
+    // If the right hand vanishes and comes back, the edge-trigger
+    // state must reset so the first frame after the return can fire
+    // again (as long as the debounce has elapsed).
     var router = HandActionRouter()
+    let rightShaka = reading(chirality: .right, gesture: .shaka)
     let t0 = Date()
 
-    _ = router.process(left: nil, right: rightHandWithWrist(y: 0.80), now: t0)
-    _ = router.process(left: nil, right: rightHandWithWrist(y: 0.60), now: t0.addingTimeInterval(0.07))
-    _ = router.process(left: nil, right: rightHandWithWrist(y: 0.40), now: t0.addingTimeInterval(0.14))
-    let actions = router.process(
-        left: nil,
-        right: rightHandWithWrist(y: 0.20),
-        now: t0.addingTimeInterval(0.20)
-    )
+    // First fire at t0.
+    _ = router.process(left: nil, right: rightShaka, now: t0)
 
-    #expect(actions.contains { if case .missionControl = $0 { return true }; return false } == false)
-}
+    // Hand disappears for a long stretch (past the debounce).
+    _ = router.process(left: nil, right: nil, now: t0.addingTimeInterval(0.5))
+    _ = router.process(left: nil, right: nil, now: t0.addingTimeInterval(1.2))
 
-@Test func secondSwipeWithinDebounceIsSwallowed() {
-    var router = HandActionRouter()
-    let t0 = Date()
+    // Hand reappears already in shaka — must fire because
+    // lastRightGesture was reset to .none when the hand vanished.
+    let actions = router.process(left: nil, right: rightShaka, now: t0.addingTimeInterval(1.4))
 
-    // First swipe — collect all actions across the motion so Mission
-    // Control is caught regardless of which frame fires it.
-    var first: [HandAction] = []
-    first += router.process(left: nil, right: rightHandWithWrist(y: 0.30), now: t0)
-    first += router.process(left: nil, right: rightHandWithWrist(y: 0.50), now: t0.addingTimeInterval(0.07))
-    first += router.process(left: nil, right: rightHandWithWrist(y: 0.68), now: t0.addingTimeInterval(0.14))
-    first += router.process(left: nil, right: rightHandWithWrist(y: 0.85), now: t0.addingTimeInterval(0.20))
-    #expect(first.contains { if case .missionControl = $0 { return true }; return false })
-
-    // Second swipe 300ms later — well within the 1s debounce, so even
-    // a legitimate upward motion must be ignored on every frame.
-    var second: [HandAction] = []
-    second += router.process(left: nil, right: rightHandWithWrist(y: 0.30), now: t0.addingTimeInterval(0.50))
-    second += router.process(left: nil, right: rightHandWithWrist(y: 0.50), now: t0.addingTimeInterval(0.57))
-    second += router.process(left: nil, right: rightHandWithWrist(y: 0.68), now: t0.addingTimeInterval(0.64))
-    second += router.process(left: nil, right: rightHandWithWrist(y: 0.85), now: t0.addingTimeInterval(0.70))
-    #expect(second.contains { if case .missionControl = $0 { return true }; return false } == false)
-}
-
-@Test func swipeAfterDebounceExpiredFiresAgain() {
-    var router = HandActionRouter()
-    let t0 = Date()
-
-    // First swipe — consume it with `_ =` since we don't assert on it,
-    // but we still need to drive the router through each frame.
-    _ = router.process(left: nil, right: rightHandWithWrist(y: 0.30), now: t0)
-    _ = router.process(left: nil, right: rightHandWithWrist(y: 0.50), now: t0.addingTimeInterval(0.07))
-    _ = router.process(left: nil, right: rightHandWithWrist(y: 0.68), now: t0.addingTimeInterval(0.14))
-    _ = router.process(left: nil, right: rightHandWithWrist(y: 0.85), now: t0.addingTimeInterval(0.20))
-
-    // Second swipe >1s later — debounce expired, fires fresh somewhere
-    // in the 4-frame window.
-    var second: [HandAction] = []
-    second += router.process(left: nil, right: rightHandWithWrist(y: 0.30), now: t0.addingTimeInterval(1.50))
-    second += router.process(left: nil, right: rightHandWithWrist(y: 0.50), now: t0.addingTimeInterval(1.57))
-    second += router.process(left: nil, right: rightHandWithWrist(y: 0.68), now: t0.addingTimeInterval(1.64))
-    second += router.process(left: nil, right: rightHandWithWrist(y: 0.85), now: t0.addingTimeInterval(1.70))
-    #expect(second.contains { if case .missionControl = $0 { return true }; return false })
-}
-
-@Test func rightHandDisappearingClearsTheSwipeBuffer() {
-    // If the right hand goes out of frame mid-swipe, its samples must
-    // be discarded so the motion doesn't "resume" when the hand
-    // reappears from a different position.
-    var router = HandActionRouter()
-    let t0 = Date()
-
-    // Partial swipe.
-    _ = router.process(left: nil, right: rightHandWithWrist(y: 0.30), now: t0)
-    _ = router.process(left: nil, right: rightHandWithWrist(y: 0.50), now: t0.addingTimeInterval(0.07))
-
-    // Hand disappears for a moment.
-    _ = router.process(left: nil, right: nil, now: t0.addingTimeInterval(0.14))
-
-    // Hand reappears already high up — without the reset this looked
-    // like a continuation of the earlier motion; with the reset it's
-    // a single stationary frame and cannot trigger.
-    let actions = router.process(
-        left: nil,
-        right: rightHandWithWrist(y: 0.85),
-        now: t0.addingTimeInterval(0.21)
-    )
-
-    #expect(actions.contains { if case .missionControl = $0 { return true }; return false } == false)
+    #expect(actions.contains { if case .missionControl = $0 { return true }; return false })
 }
 
 @Test func rightFistDoesNotStartADrag() {

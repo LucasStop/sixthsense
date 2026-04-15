@@ -14,8 +14,7 @@ import SharedServices
 /// Tracks both of the user's hands via the webcam and translates gestures
 /// into real desktop actions:
 ///
-///   • Right hand: cursor movement (index tip), Mission Control
-///                 (deliberate upward wrist swipe).
+///   • Right hand: cursor movement (index tip), Mission Control (shaka).
 ///   • Left  hand: click (pinch), drag (fist), scroll (circular motion),
 ///                 app switcher ⌘+Tab (shaka).
 ///

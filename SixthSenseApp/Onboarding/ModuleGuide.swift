@@ -132,7 +132,7 @@ extension ModuleGuide {
                 name: "Mission Control",
                 icon: "rectangle.on.rectangle",
                 action: "Mão direita",
-                howTo: "Faça um movimento rápido e deliberado da mão direita para cima, como se estivesse dando um flick com o pulso em direção ao topo da tela. O macOS abre o Mission Control (equivalente a Ctrl+↑ ou F3) mostrando todas as janelas e Spaces. Gestos lentos (movimento normal do cursor) não disparam — só um swipe rápido cruza o limite de velocidade. Espera cerca de 1s entre swipes para poder disparar outra vez."
+                howTo: "Faça o gesto shaka (hang loose, 🤙) com a mão direita: polegar e mindinho esticados, indicador/médio/anelar dobrados. O macOS abre o Mission Control (equivalente a Ctrl+↑ ou F3) mostrando todas as janelas e Spaces. É a mesma pose do Cmd+Tab, só que com a outra mão. Saia da pose e volte pra disparar de novo — o edge-trigger + debounce de 1s impedem disparos duplicados."
             ),
             GestureInfo(
                 name: "Trocar app (⌘+Tab)",

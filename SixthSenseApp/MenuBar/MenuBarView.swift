@@ -129,7 +129,7 @@ struct MenuBarView: View {
             gestureRow(icon: "arrow.triangle.2.circlepath", color: .purple,
                        title: "Rolar", subtitle: "Círculo no ar com a esquerda")
             gestureRow(icon: "rectangle.on.rectangle", color: .mint,
-                       title: "Mission Control", subtitle: "Swipe rápido da mão direita para cima")
+                       title: "Mission Control", subtitle: "Shaka com a direita (🤙)")
             gestureRow(icon: "square.on.square", color: .yellow,
                        title: "Trocar app", subtitle: "Shaka com a esquerda (⌘+Tab)")
         }

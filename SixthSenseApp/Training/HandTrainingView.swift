@@ -508,7 +508,7 @@ struct HandTrainingView: View {
                 }
                 HStack(alignment: .top, spacing: 14) {
                     legendItem(icon: "rectangle.on.rectangle", color: .mint,
-                               label: "Mission Control", description: "Swipe rápido da mão direita para cima")
+                               label: "Mission Control", description: "Shaka com a direita (🤙)")
                     legendItem(icon: "square.on.square", color: .yellow,
                                label: "Trocar app", description: "Shaka com a esquerda (⌘+Tab)")
                 }

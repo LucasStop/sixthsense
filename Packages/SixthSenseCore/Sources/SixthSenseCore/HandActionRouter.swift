@@ -43,17 +43,16 @@ public enum HandAction: Sendable, Equatable {
 /// Current rules:
 ///
 ///   • Right hand → cursor. Moves to the smoothed index-tip position
-///     whenever the hand is in a cursor-friendly pose. When the right
-///     hand closes into a fist the cursor FREEZES at its last position
-///     so brief misclassifications don't teleport the cursor into the
-///     palm.
+///     whenever the hand is in a cursor-friendly pose. The cursor
+///     FREEZES during `.fist` (protection against classifier noise)
+///     and during `.shaka` (the Mission Control trigger pose, where
+///     the index is curled and isn't a sensible cursor target).
 ///
-///   • Right wrist swipe up → Mission Control. A deliberate fast upward
-///     motion of the right wrist (velocity above threshold over a 250ms
-///     window) fires `.missionControl`. Pose-independent — only the
-///     wrist velocity matters — so the user can be pointing, open-handed,
-///     or mid-pinch and the trigger still works. Debounced to one fire
-///     per second to prevent accidental re-triggers.
+///   • Right hand shaka → Mission Control. Edge-triggered: the moment
+///     the right hand transitions into `.shaka` (thumb + pinky
+///     extended, other fingers curled — "hang loose"), `.missionControl`
+///     fires. A 1s debounce prevents classifier flapping from
+///     re-triggering the shortcut.
 ///
 ///   • Left hand pinch  → clicks at the last known cursor position the
 ///     moment it transitions into a `.pinch`. Sustained pinch does not
@@ -111,10 +110,10 @@ public struct HandActionRouter: Sendable {
     /// Timestamp of the last Mission Control emitted.
     private var lastMissionControlTime: Date?
 
-    /// Detector for the right-wrist upward swipe gesture that triggers
-    /// Mission Control. Pose-independent — the wrist y velocity over a
-    /// short rolling window is the only signal.
-    private var rightSwipeDetector = UpwardSwipeDetector()
+    /// Previous right-hand gesture — used to detect the edge transition
+    /// INTO `.shaka` that fires Mission Control. Keeps the shortcut from
+    /// retriggering while the user holds the pose.
+    private var lastRightGesture: DetectedHandGesture = .none
 
     /// Whether the user is currently holding the left fist (drag active).
     /// Exposed so HandCommandModule can decide whether moveCursor should
@@ -159,14 +158,15 @@ public struct HandActionRouter: Sendable {
     ) -> [HandAction] {
         var actions: [HandAction] = []
 
-        // Right hand → cursor movement. Moves with the index tip when the
-        // hand is in a cursor-friendly pose, but FREEZES during a right
-        // fist so brief classifier misclassifications (where fingertips
-        // suddenly lose confidence and "collapse" toward the palm) don't
-        // teleport the cursor. The freeze is a stability feature, not
-        // a gesture trigger.
+        // Right hand → cursor movement. Moves with the smoothed index
+        // tip when the hand is in a cursor-friendly pose. FREEZES during
+        // `.fist` (protection against classifier noise where fingertips
+        // collapse toward the palm) and during `.shaka` (the Mission
+        // Control trigger pose, where the index is curled and would
+        // not be a sensible cursor target).
         if let right,
            right.gesture != .fist,
+           right.gesture != .shaka,
            let indexLandmark = right.snapshot.landmarks[.indexTip],
            indexLandmark.isConfident {
             let raw = indexLandmark.position
@@ -179,20 +179,15 @@ public struct HandActionRouter: Sendable {
             smoother.reset()
         }
 
-        // Right wrist upward swipe → Mission Control. Feed the wrist y
-        // into the detector whenever the right hand is visible; the
-        // detector averages velocity across a 250ms window and fires
-        // exactly once per deliberate upward motion. Pose-independent:
-        // the user can be pointing, open-handed, mid-pinch, or even
-        // in a fist — the wrist landmark is tracked regardless.
-        if let right,
-           let wrist = right.snapshot.landmarks[.wrist],
-           wrist.isConfident {
-            rightSwipeDetector.observe(
-                y: Double(wrist.position.y),
-                at: now
-            )
-            if rightSwipeDetector.step() {
+        // Right hand shaka → Mission Control. Edge-triggered on the
+        // transition into `.shaka`: we remember the previous frame's
+        // gesture and fire only when the current frame is the first
+        // one in the shaka pose. This prevents a sustained hold from
+        // spamming the shortcut. A 1s debounce on top provides extra
+        // protection against classifier flapping between .shaka and
+        // its close neighbours (open hand, point).
+        if let right {
+            if right.gesture == .shaka && lastRightGesture != .shaka {
                 let longEnough = lastMissionControlTime
                     .map { now.timeIntervalSince($0) >= missionControlDebounce } ?? true
                 if longEnough {
@@ -200,11 +195,11 @@ public struct HandActionRouter: Sendable {
                     lastMissionControlTime = now
                 }
             }
-        } else if right == nil {
-            // Right hand disappeared — clear the swipe buffer so the
-            // next entry starts fresh instead of extrapolating from
-            // stale samples.
-            rightSwipeDetector.reset()
+            lastRightGesture = right.gesture
+        } else {
+            // Right hand gone — reset the edge-trigger state so the
+            // next entry into shaka fires cleanly.
+            lastRightGesture = .none
         }
 
         // Left hand → drag (fist) + click (pinch) + scroll (circle) +
