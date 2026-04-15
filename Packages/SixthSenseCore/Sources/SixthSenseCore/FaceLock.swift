@@ -265,50 +265,6 @@ public struct EnrollmentTarget: Sendable, Identifiable, Hashable {
     ]
 }
 
-// MARK: - Recognition Calibration
-
-/// Calibration parameters derived at enrollment time and applied at
-/// recognition time. Instead of a single hard-coded feature-print
-/// distance threshold, we compute how "internally consistent" the user's
-/// own captures are across angles, and set a per-user threshold above
-/// that — so an intruder has to beat the user's intra-enrollment spread
-/// to pass, which is much tighter than the one-size-fits-all default.
-public struct FaceRecognitionCalibration: Sendable, Hashable, Codable {
-
-    /// Mean pairwise distance between the user's own enrolled prints
-    /// (cross-pose). A low number means the user's captures are very
-    /// self-similar; a higher number means pose variation produces
-    /// noticeable differences.
-    public let meanIntraDistance: Float
-
-    /// Standard deviation of those pairwise distances. Used to push the
-    /// threshold above typical self-variation.
-    public let stdDevIntraDistance: Float
-
-    /// Maximum pairwise distance observed inside the enrollment set.
-    /// Used as the hard floor on the recognition threshold.
-    public let maxIntraDistance: Float
-
-    public init(
-        meanIntraDistance: Float,
-        stdDevIntraDistance: Float,
-        maxIntraDistance: Float
-    ) {
-        self.meanIntraDistance = meanIntraDistance
-        self.stdDevIntraDistance = stdDevIntraDistance
-        self.maxIntraDistance = maxIntraDistance
-    }
-
-    /// Suggested recognition threshold: mean + k * stddev, clamped into
-    /// a sane range. `k = 2.0` rejects roughly the 97.5th percentile of
-    /// a normal distribution — tight but not paranoid.
-    public var suggestedThreshold: Float {
-        let candidate = meanIntraDistance + 2.0 * stdDevIntraDistance
-        let floor = max(maxIntraDistance * 1.05, 12.0)
-        return min(max(candidate, floor), 26.0)
-    }
-}
-
 // MARK: - Helper
 
 private extension Comparable {

@@ -557,12 +557,12 @@ struct FaceEnrollmentView: View {
 
     private func finalizeChoice() {
         guard let choice else { return }
-        let prints = faceRecognition.capturedEnrollmentPrints()
+        let embeddings = faceRecognition.capturedEnrollmentEmbeddings()
 
         do {
             switch choice {
             case .onlyMe:
-                try faceRecognition.enroll(prints: prints, activateMode: true)
+                try faceRecognition.enroll(embeddings: embeddings, activateMode: true)
             case .anyone:
                 faceRecognition.setLockMode(.anyFace)
             }
