@@ -131,8 +131,8 @@ extension ModuleGuide {
             GestureInfo(
                 name: "Mission Control",
                 icon: "rectangle.on.rectangle",
-                action: "Duas mãos",
-                howTo: "Feche os dois punhos ao mesmo tempo. O macOS abre o Mission Control (equivalente a Ctrl+↑ ou F3) mostrando todas as janelas e Spaces. Se você estava arrastando algo com o punho esquerdo, o drag é encerrado automaticamente ao entrar na pose — sem soltar item no meio do caminho."
+                action: "Mão direita",
+                howTo: "Feche o punho direito e segure por cerca de meio segundo. O macOS abre o Mission Control (equivalente a Ctrl+↑ ou F3) mostrando todas as janelas e Spaces. Abra a mão direita e feche de novo para disparar outra vez — o hold evita disparos acidentais quando a mão passa perto do punho por um frame."
             ),
             GestureInfo(
                 name: "Trocar app (⌘+Tab)",

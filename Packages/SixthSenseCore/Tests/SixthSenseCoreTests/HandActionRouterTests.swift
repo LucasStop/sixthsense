@@ -536,77 +536,101 @@ private func simulateLeftIndexPath(
     })
 }
 
-// MARK: - Both fists → Mission Control
+// MARK: - Right fist held → Mission Control
 
-@Test func bothFistsEmitsMissionControlOnEdge() {
+@Test func rightFistBelowHoldDurationDoesNotFire() {
     var router = HandActionRouter()
-    let leftFist  = reading(chirality: .left,  gesture: .fist)
     let rightFist = reading(chirality: .right, gesture: .fist)
 
-    let actions = router.process(left: leftFist, right: rightFist)
+    // A single frame in the fist pose — nowhere near the 400ms hold.
+    let actions = router.process(left: nil, right: rightFist)
+
+    #expect(actions.contains { if case .missionControl = $0 { return true }; return false } == false)
+}
+
+@Test func rightFistHeldForHoldDurationFiresMissionControl() {
+    var router = HandActionRouter()
+    let rightFist = reading(chirality: .right, gesture: .fist)
+
+    let t0 = Date()
+    _ = router.process(left: nil, right: rightFist, now: t0)
+    // 450ms later, past the 400ms hold threshold.
+    let actions = router.process(
+        left: nil,
+        right: rightFist,
+        now: t0.addingTimeInterval(0.45)
+    )
 
     #expect(actions.contains { if case .missionControl = $0 { return true }; return false })
 }
 
-@Test func bothFistsHeldDoesNotRepeatMissionControl() {
+@Test func rightFistHeldDoesNotRepeatMissionControl() {
     var router = HandActionRouter()
-    let leftFist  = reading(chirality: .left,  gesture: .fist)
     let rightFist = reading(chirality: .right, gesture: .fist)
 
     let t0 = Date()
-    _ = router.process(left: leftFist, right: rightFist, now: t0)
-    // Same pose held → must NOT fire again this frame.
-    let second = router.process(left: leftFist, right: rightFist, now: t0.addingTimeInterval(0.05))
+    _ = router.process(left: nil, right: rightFist, now: t0)
+    // First fire at 0.45s.
+    _ = router.process(left: nil, right: rightFist, now: t0.addingTimeInterval(0.45))
+    // Continue holding — must NOT fire again while the fist is still down.
+    let later = router.process(left: nil, right: rightFist, now: t0.addingTimeInterval(0.8))
 
-    #expect(second.contains { if case .missionControl = $0 { return true }; return false } == false)
+    #expect(later.contains { if case .missionControl = $0 { return true }; return false } == false)
 }
 
-@Test func bothFistsCancelsActiveDragBeforeFiring() {
+@Test func rightFistReleaseAndReEnterFiresAgain() {
+    var router = HandActionRouter()
+    let rightFist = reading(chirality: .right, gesture: .fist)
+    let rightOpen = reading(chirality: .right, gesture: .openHand)
+
+    let t0 = Date()
+    _ = router.process(left: nil, right: rightFist, now: t0)
+    _ = router.process(left: nil, right: rightFist, now: t0.addingTimeInterval(0.45))
+    // Release the fist.
+    _ = router.process(left: nil, right: rightOpen, now: t0.addingTimeInterval(0.5))
+    // Re-enter after the debounce window (1s) expires.
+    _ = router.process(left: nil, right: rightFist, now: t0.addingTimeInterval(1.2))
+    let actions = router.process(
+        left: nil,
+        right: rightFist,
+        now: t0.addingTimeInterval(1.65)
+    )
+
+    #expect(actions.contains { if case .missionControl = $0 { return true }; return false })
+}
+
+@Test func rightFistDoesNotStartADrag() {
+    var router = HandActionRouter()
+    let rightFist = reading(chirality: .right, gesture: .fist)
+
+    let actions = router.process(left: nil, right: rightFist)
+
+    // Right-hand fist is a keyboard shortcut, never a drag.
+    #expect(actions.contains { if case .dragBegin = $0 { return true }; return false } == false)
+    #expect(router.isDragging == false)
+}
+
+@Test func leftFistStillDragsWhenRightIsFistToo() {
+    // Regression guard: during an active left-fist drag, the right hand
+    // entering a fist should NOT cancel the drag (the old two-fists
+    // behaviour). The drag stays, Mission Control fires on its own clock.
     var router = HandActionRouter()
     let leftFist  = reading(chirality: .left,  gesture: .fist)
     let rightFist = reading(chirality: .right, gesture: .fist)
     let rightOpen = reading(chirality: .right, gesture: .openHand)
 
-    // Start a drag with left fist alone.
+    // Start the drag.
     _ = router.process(left: leftFist, right: rightOpen)
     #expect(router.isDragging == true)
 
-    // Right transitions into fist → Mission Control fires AND the
-    // drag is closed out cleanly with a dragEnd.
-    let actions = router.process(left: leftFist, right: rightFist)
-
-    #expect(actions.contains { if case .dragEnd = $0 { return true }; return false })
-    #expect(actions.contains { if case .missionControl = $0 { return true }; return false })
-    #expect(router.isDragging == false)
-}
-
-@Test func bothFistsDoesNotAlsoStartADrag() {
-    var router = HandActionRouter()
-    let leftFist  = reading(chirality: .left,  gesture: .fist)
-    let rightFist = reading(chirality: .right, gesture: .fist)
-
-    let actions = router.process(left: leftFist, right: rightFist)
-
-    // The left fist must NOT start a drag when the right is also fist;
-    // otherwise entering the pose would fire Mission Control AND drag.
-    #expect(actions.contains { if case .dragBegin = $0 { return true }; return false } == false)
-    #expect(router.isDragging == false)
-}
-
-@Test func missionControlFiresAgainAfterReleasingPose() {
-    var router = HandActionRouter()
-    let leftFist  = reading(chirality: .left,  gesture: .fist)
-    let rightFist = reading(chirality: .right, gesture: .fist)
-    let open      = reading(chirality: .right, gesture: .openHand)
-
+    // Right hand enters fist pose. Drag must stay active.
     let t0 = Date()
     _ = router.process(left: leftFist, right: rightFist, now: t0)
-    // Release the pose (right opens).
-    _ = router.process(left: leftFist, right: open, now: t0.addingTimeInterval(0.05))
-    // Re-enter the pose AFTER the debounce.
-    let actions = router.process(left: leftFist, right: rightFist, now: t0.addingTimeInterval(1.0))
+    #expect(router.isDragging == true)
 
-    #expect(actions.contains { if case .missionControl = $0 { return true }; return false })
+    // After the hold, Mission Control fires but drag is still alive.
+    _ = router.process(left: leftFist, right: rightFist, now: t0.addingTimeInterval(0.45))
+    #expect(router.isDragging == true)
 }
 
 // MARK: - Left shaka → Cmd+Tab

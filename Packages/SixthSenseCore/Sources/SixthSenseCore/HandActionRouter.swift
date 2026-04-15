@@ -76,8 +76,15 @@ public struct HandActionRouter: Sendable {
     /// re-enter the pose, which matches typical Cmd+Tab usage.
     public var appSwitcherDebounce: TimeInterval = 0.35
 
-    /// Minimum time between successive Mission Control triggers.
-    public var missionControlDebounce: TimeInterval = 0.8
+    /// How long the right hand must be held in a fist pose before
+    /// Mission Control fires. Long enough to reject transient
+    /// misclassifications, short enough to feel responsive.
+    public var missionControlHoldDuration: TimeInterval = 0.4
+
+    /// Minimum time between successive Mission Control triggers. Blocks
+    /// re-fires from the same continuous hold — the user has to
+    /// release the fist and enter it again before the next one.
+    public var missionControlDebounce: TimeInterval = 1.0
 
     // MARK: - State
 
@@ -89,10 +96,6 @@ public struct HandActionRouter: Sendable {
     /// Previous left-hand gesture — used to detect edge transitions.
     private var lastLeftGesture: DetectedHandGesture = .none
 
-    /// Previous right-hand gesture — used to detect the "both fists"
-    /// edge transition for Mission Control.
-    private var lastRightGesture: DetectedHandGesture = .none
-
     /// Timestamp of the last click emitted, for temporal debounce.
     private var lastClickTime: Date?
 
@@ -101,6 +104,16 @@ public struct HandActionRouter: Sendable {
 
     /// Timestamp of the last Mission Control emitted.
     private var lastMissionControlTime: Date?
+
+    /// Timestamp at which the right hand entered a fist pose, or `nil`
+    /// when the right hand is not currently in a fist. Used to compute
+    /// the hold duration before Mission Control fires.
+    private var rightFistEnteredAt: Date?
+
+    /// Whether Mission Control has already fired for the current
+    /// continuous fist hold. Clears when the right hand leaves the
+    /// fist pose, so the next entry can fire again.
+    private var rightFistFired: Bool = false
 
     /// Whether the user is currently holding the left fist (drag active).
     /// Exposed so HandCommandModule can decide whether moveCursor should
@@ -160,39 +173,39 @@ public struct HandActionRouter: Sendable {
             smoother.reset()
         }
 
-        // Two-fists → Mission Control. Checked BEFORE the drag state
-        // machine so that entering the two-fists pose cancels an
-        // in-progress drag (if any) instead of leaving it stuck.
-        // Edge-triggered: fires once on the transition into the pose,
-        // with a debounce so re-entering doesn't spam F3.
-        let bothFists = (left?.gesture == .fist) && (right?.gesture == .fist)
-        let wasBothFists = (lastLeftGesture == .fist) && (lastRightGesture == .fist)
-
-        if bothFists && !wasBothFists {
-            let longEnough = lastMissionControlTime
-                .map { now.timeIntervalSince($0) >= missionControlDebounce } ?? true
-            if longEnough {
-                // If a drag was active (left fist alone), close it out
-                // cleanly before firing the shortcut.
-                if isDragging {
-                    actions.append(.dragEnd(at: lastRightIndexTip))
-                    isDragging = false
-                }
-                actions.append(.missionControl)
-                lastMissionControlTime = now
-                scrollDetector.reset()
+        // Right fist held → Mission Control. Fires once after the user
+        // holds a right-hand fist for `missionControlHoldDuration`, then
+        // waits for the fist to be released before it can fire again.
+        // The hold requirement rejects transient misclassifications
+        // (e.g. a brief frame of fist in the middle of a pointing
+        // sequence). A debounce layered on top prevents rapid re-fires
+        // even across hold/release cycles.
+        if let right, right.gesture == .fist {
+            if rightFistEnteredAt == nil {
+                rightFistEnteredAt = now
             }
+            let heldFor = now.timeIntervalSince(rightFistEnteredAt ?? now)
+            if heldFor >= missionControlHoldDuration && !rightFistFired {
+                let longEnough = lastMissionControlTime
+                    .map { now.timeIntervalSince($0) >= missionControlDebounce } ?? true
+                if longEnough {
+                    actions.append(.missionControl)
+                    lastMissionControlTime = now
+                    rightFistFired = true
+                }
+            }
+        } else {
+            // Right hand left the fist pose (or disappeared) — reset
+            // the hold clock so the next entry starts fresh.
+            rightFistEnteredAt = nil
+            rightFistFired = false
         }
 
         // Left hand → drag (fist) + click (pinch) + scroll (circle) +
         // shaka (app switcher).
         if let left {
-            // Drag state machine. Only engage if the RIGHT hand isn't
-            // also in a fist — that combination is Mission Control and
-            // was handled above. Without this guard, the very first
-            // frame of two-fists would fire Mission Control AND start
-            // a drag on the same frame.
-            if left.gesture == .fist && right?.gesture != .fist {
+            // Drag state machine. Left fist alone starts a drag.
+            if left.gesture == .fist {
                 if !isDragging {
                     actions.append(.dragBegin(at: lastRightIndexTip))
                     isDragging = true
@@ -271,11 +284,6 @@ public struct HandActionRouter: Sendable {
             scrollDetector.reset()
             lastLeftGesture = .none
         }
-
-        // Track the right hand's gesture for the two-fists edge trigger
-        // on the next frame. `.none` when the hand is missing so a
-        // briefly-dropped frame doesn't fake a fresh edge transition.
-        lastRightGesture = right?.gesture ?? .none
 
         return actions
     }

@@ -64,7 +64,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Onboarding flow
 
     /// Decide which onboarding step (if any) to open: permissions first,
-    /// then face enrollment.
+    /// then face enrollment. If everything is already set up, start the
+    /// hand controller immediately so the user can start gesturing as
+    /// soon as the app window appears.
     private func beginOnboardingIfNeeded() {
         let cameraOK = AVCaptureDevice.authorizationStatus(for: .video) == .authorized
         let accessibilityOK = AXIsProcessTrusted()
@@ -78,6 +80,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // if the user hasn't configured face recognition yet.
         if shouldOfferEnrollment() {
             showEnrollmentWindow()
+            return
+        }
+
+        // Permissions OK and onboarding done → auto-start HandCommand.
+        startHandCommandIfIdle()
+    }
+
+    /// Turn on HandCommand unconditionally the first time the app
+    /// finishes launching with all its prerequisites in place. Keeps
+    /// the call idempotent so re-entry during hot reloads or repeated
+    /// launches is a no-op.
+    private func startHandCommandIfIdle() {
+        guard let appState else { return }
+        let state = appState.registry.handCommand.state
+        guard state == .disabled else { return }
+        Task { @MainActor in
+            await appState.registry.toggleHandCommand()
         }
     }
 
@@ -119,11 +138,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             // After the user dismisses the setup window, if permissions
             // are now OK and the face onboarding hasn't run yet, chain
-            // into the enrollment flow.
+            // into the enrollment flow. Otherwise auto-start the hand
+            // controller so there's nothing else to click.
             if let self, self.shouldOfferEnrollment() {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                     self.showEnrollmentWindow()
                 }
+            } else {
+                self?.startHandCommandIfIdle()
             }
         }
 
@@ -177,9 +199,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onFinish: { [weak self] in
                 self?.markEnrollmentOnboarded()
                 self?.closeEnrollmentWindow()
-                // Stop the camera again — HandCommand will turn it back
-                // on when the user clicks "Ativar controle".
+                // Stop the camera again — toggleHandCommand will turn it
+                // back on right after, as part of the auto-start.
                 faceRecognition.stop()
+                // Kick off HandCommand now that onboarding is behind us
+                // so the user doesn't need an extra click to start.
+                self?.startHandCommandIfIdle()
             }
         )
 

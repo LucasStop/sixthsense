@@ -408,16 +408,18 @@ private func leftHandWithIndex(at tip: CGPoint) -> HandReading {
     #expect(scrollCount == 0)
 }
 
-// MARK: - Mission Control (both fists) + Cmd+Tab (shaka)
+// MARK: - Mission Control (right fist held) + Cmd+Tab (shaka)
 
-@Test @MainActor func pipelineBothFistsPressesCtrlUpArrow() async throws {
+@Test @MainActor func pipelineRightFistHeldPressesCtrlUpArrow() async throws {
     let h = Harness.make()
     try await h.module.start()
 
-    h.module.handleReadings([
-        reading(.left,  .fist),
-        reading(.right, .fist),
-    ])
+    // Feed a right fist and sleep longer than the hold duration (400ms)
+    // between the first and last frame so the router sees enough real
+    // elapsed time to cross the threshold.
+    h.module.handleReadings([reading(.right, .fist)])
+    try await Task.sleep(for: .milliseconds(450))
+    h.module.handleReadings([reading(.right, .fist)])
 
     // kVK_UpArrow = 0x7E (126). Must be called with Ctrl modifier.
     let hasCtrlUp = h.keyboard.calls.contains { call in
@@ -429,17 +431,14 @@ private func leftHandWithIndex(at tip: CGPoint) -> HandReading {
     #expect(hasCtrlUp == true)
 }
 
-@Test @MainActor func pipelineBothFistsDoesNotStartDrag() async throws {
+@Test @MainActor func pipelineRightFistDoesNotStartDrag() async throws {
     let h = Harness.make()
     try await h.module.start()
 
-    h.module.handleReadings([
-        reading(.left,  .fist),
-        reading(.right, .fist),
-    ])
+    h.module.handleReadings([reading(.right, .fist)])
 
-    // The mouse must NOT have received a leftMouseDown — the fist
-    // combination is Mission Control, not drag.
+    // The mouse must NOT have received a leftMouseDown — the right-fist
+    // pose is a keyboard shortcut, never a drag.
     let downCount = h.cursor.calls.filter {
         if case .leftMouseDown = $0 { return true }; return false
     }.count
