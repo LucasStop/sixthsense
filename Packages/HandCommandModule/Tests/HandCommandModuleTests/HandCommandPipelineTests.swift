@@ -431,6 +431,57 @@ private func leftHandWithIndex(at tip: CGPoint) -> HandReading {
     #expect(hasCtrlUp == true)
 }
 
+@Test @MainActor func pipelineRightHandDoesBothActionsInSequence() async throws {
+    // Full end-to-end verification that the right hand performs both
+    // of its responsibilities:
+    //   1. Cursor movement while in cursor-friendly poses (pointing).
+    //   2. Mission Control on a sustained fist hold.
+    // Both actions must survive in the same continuous session.
+    let h = Harness.make()
+    try await h.module.start()
+
+    // Phase 1: pointing at three different positions. Each frame must
+    // generate a moveTo call on the mock cursor.
+    h.module.handleReadings([reading(.right, .pointing, wrist: CGPoint(x: 0.3, y: 0.3))])
+    h.module.handleReadings([reading(.right, .pointing, wrist: CGPoint(x: 0.5, y: 0.3))])
+    h.module.handleReadings([reading(.right, .pointing, wrist: CGPoint(x: 0.7, y: 0.3))])
+
+    let movesAfterPointing = h.cursor.calls.filter {
+        if case .moveTo = $0 { return true }; return false
+    }.count
+    #expect(movesAfterPointing == 3)
+
+    // Phase 2: transition into fist and hold for >400ms. During this
+    // window the cursor must freeze (no new moveTo calls emitted),
+    // and Mission Control (Ctrl+UpArrow) must fire once the hold
+    // crosses the threshold.
+    h.module.handleReadings([reading(.right, .fist, wrist: CGPoint(x: 0.7, y: 0.3))])
+    try await Task.sleep(for: .milliseconds(450))
+    h.module.handleReadings([reading(.right, .fist, wrist: CGPoint(x: 0.7, y: 0.3))])
+
+    let movesAfterFist = h.cursor.calls.filter {
+        if case .moveTo = $0 { return true }; return false
+    }.count
+    #expect(movesAfterFist == 3, "Cursor must stay frozen during the right-fist hold")
+
+    let missionControlFired = h.keyboard.calls.contains { call in
+        if case .press(let keyCode, let modifiers) = call {
+            return keyCode == 0x7E && (modifiers & CGEventFlags.maskControl.rawValue) != 0
+        }
+        return false
+    }
+    #expect(missionControlFired == true, "Right fist held past 400ms must fire Ctrl+Up for Mission Control")
+
+    // Phase 3: release the fist back to pointing. Cursor must resume
+    // movement from the new position.
+    h.module.handleReadings([reading(.right, .pointing, wrist: CGPoint(x: 0.4, y: 0.4))])
+
+    let movesAfterRelease = h.cursor.calls.filter {
+        if case .moveTo = $0 { return true }; return false
+    }.count
+    #expect(movesAfterRelease == 4, "Cursor must resume moving after the fist is released")
+}
+
 @Test @MainActor func pipelineRightFistDoesNotStartDrag() async throws {
     let h = Harness.make()
     try await h.module.start()
