@@ -17,8 +17,8 @@ detecção roda localmente no Mac — nenhum dado sai do dispositivo.
 | Gesto | Mão | Ação |
 |-------|-----|------|
 | Apontar o indicador | Direita | Move o cursor |
-| Punho fechado (hold ~250ms) | Direita | Mission Control |
-| Pinça (polegar + indicador) | Esquerda | Clicar |
+| Pinça (polegar + indicador) | Qualquer | Clicar |
+| Shaka (polegar + mindinho) | Direita | Mission Control |
 | Punho fechado | Esquerda | Segurar para arrastar |
 | Traçar círculo no ar | Esquerda | Rolar (anti-horário = cima, horário = baixo) |
 | Shaka (polegar + mindinho) | Esquerda | ⌘+Tab (trocar app) |
