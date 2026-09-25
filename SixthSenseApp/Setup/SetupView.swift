@@ -18,7 +18,6 @@ struct SetupView: View {
 
     @State private var cameraGranted: Bool = false
     @State private var accessibilityGranted: Bool = false
-    @State private var copiedPath: Bool = false
     @State private var requestingCamera: Bool = false
 
     private let refreshTimer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
@@ -134,28 +133,19 @@ struct SetupView: View {
         } else {
             HStack(spacing: 8) {
                 Button {
-                    AccessibilityDiagnostics.copyPreferredPathToPasteboard()
-                    copiedPath = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
-                        copiedPath = false
-                    }
+                    AccessibilityDiagnostics.openAccessibilitySettings()
                 } label: {
-                    Label(
-                        copiedPath
-                            ? "Copiado!"
-                            : (AccessibilityDiagnostics.bundlePath != nil
-                                ? "Copiar caminho do .app"
-                                : "Copiar caminho"),
-                        systemImage: "doc.on.doc"
-                    )
+                    Text("Abrir Ajustes")
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.regular)
 
+                // System prompt also registers the app in the Accessibility
+                // list, so the user only flips the switch — no "+" needed.
                 Button {
-                    AccessibilityDiagnostics.openAccessibilitySettings()
+                    AccessibilityDiagnostics.requestTrust()
                 } label: {
-                    Text("Abrir Ajustes")
+                    Text("Conceder acesso")
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.regular)
@@ -166,7 +156,7 @@ struct SetupView: View {
     private var pathHint: some View {
         VStack(alignment: .leading, spacing: 4) {
             if AccessibilityDiagnostics.bundlePath != nil {
-                Text("Em Ajustes do Sistema → Privacidade e Segurança → Acessibilidade, clique em \"+\" e adicione o SixthSense.app pelo Finder:")
+                Text("Clique em \"Conceder acesso\" e ative o SixthSense na lista. Se ele não aparecer, clique em \"+\" e adicione o .app:")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -287,6 +277,12 @@ struct SetupView: View {
     }
 
     private func requestCameraPermission() async {
+        // After a denial macOS never shows the prompt again — only Settings can flip it.
+        let status = AVCaptureDevice.authorizationStatus(for: .video)
+        if status == .denied || status == .restricted {
+            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera")!)
+            return
+        }
         requestingCamera = true
         let granted = await AVCaptureDevice.requestAccess(for: .video)
         cameraGranted = granted
