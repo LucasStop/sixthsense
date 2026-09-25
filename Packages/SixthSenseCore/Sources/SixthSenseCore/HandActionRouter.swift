@@ -8,7 +8,7 @@ import CoreGraphics
 /// case into CGEvent-based cursor / keyboard injection.
 ///
 /// The enum intentionally keeps cases for gestures that are not currently
-/// wired up (drag, scroll, Mission Control, Space switching, Command hold)
+/// wired up (double click, show desktop, Space switching, Command hold)
 /// so they can be re-enabled in future iterations without reshaping the
 /// public surface.
 public enum HandAction: Sendable, Equatable {
@@ -23,7 +23,7 @@ public enum HandAction: Sendable, Equatable {
     // Scroll (left circular motion)
     case scroll(deltaY: Int32)
 
-    // System shortcuts (both-fists / left-shaka)
+    // System shortcuts (right shaka / left shaka)
     case missionControl
     case appSwitcher
 
