@@ -104,7 +104,7 @@ public struct HandCommandSettingsForm: View {
                     icon: "hand.pinch",
                     color: .pink,
                     label: "Clicar",
-                    hint: "Mão esquerda faz pinça",
+                    hint: "Pinça com qualquer mão",
                     isOn: $module.clickEnabled
                 )
                 gestureToggleRow(
@@ -125,7 +125,7 @@ public struct HandCommandSettingsForm: View {
                     icon: "rectangle.on.rectangle",
                     color: .mint,
                     label: "Mission Control",
-                    hint: "Punho direito fechado por ~½s",
+                    hint: "Shaka com a direita",
                     isOn: $module.missionControlEnabled
                 )
                 gestureToggleRow(

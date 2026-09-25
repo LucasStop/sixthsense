@@ -173,7 +173,7 @@ private struct HandCommandSettingsTab: View {
             } header: {
                 Text("Sensibilidade")
             } footer: {
-                Text("A mão direita move o cursor (indicador). A mão esquerda pinça para clicar e fecha o punho para arrastar.")
+                Text("A mão direita move o cursor (indicador). A pinça clica com qualquer mão; o punho esquerdo arrasta.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
