@@ -156,7 +156,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.setContentSize(NSSize(width: 580, height: 580))
         window.center()
         window.isReleasedWhenClosed = false
-        window.level = .floating
         window.titlebarAppearsTransparent = true
 
         setupWindow = window
@@ -215,7 +214,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.setContentSize(NSSize(width: 620, height: 720))
         window.center()
         window.isReleasedWhenClosed = false
-        window.level = .floating
         window.titlebarAppearsTransparent = true
 
         enrollmentWindow = window

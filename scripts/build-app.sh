@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 #
 # build-app.sh — Empacota o executável do SPM em um .app bundle com
-# assinatura ad-hoc estável e path fixo, para que a permissão de
+# assinatura estável e path fixo, para que a permissão de
 # Acessibilidade concedida pelo usuário persista entre rebuilds.
 #
 # Por padrão:
 #   - Compila em release mode (para velocidade de runtime)
 #   - Monta SixthSense.app em build/SixthSense.app
-#   - Assina ad-hoc com identidade "-" (identity estável baseada em bundle ID)
+#   - Assina com a primeira identidade "Apple Development" do keychain
+#     (ou SIXTHSENSE_SIGN_ID); sem nenhuma, cai para ad-hoc
 #
 # Flags:
 #   -d, --debug     Compila em debug mode
@@ -78,16 +79,24 @@ cp "$INFO_PLIST_SRC" "$APP_BUNDLE/Contents/Info.plist"
 # Permite que o runtime saiba o bundle root — Bundle.main passa a funcionar.
 touch "$APP_BUNDLE/Contents/Resources/.keep"
 
-# ---------- Step 3: ad-hoc codesign ----------
+# ---------- Step 3: codesign ----------
 #
-# A assinatura ad-hoc (identity "-") gera um code directory hash derivado
-# exclusivamente do conteúdo + bundle identifier. Dois binários idênticos
-# com mesmo bundle ID produzem a MESMA assinatura, mesmo que compilados
-# em momentos diferentes. Com isso, a TCC database do macOS reconhece o
-# app como o mesmo entre rebuilds e preserva a permissão de Acessibilidade.
+# O TCC casa a permissão com o designated requirement da assinatura.
+# Ad-hoc ("-") vira `cdhash H"..."`, que muda a cada build → a chave em
+# Ajustes continua ligada mas AXIsProcessTrusted() devolve false.
+# Com um certificado, o requirement é bundle ID + certificado, estável
+# entre builds.
 
-echo "▶ Assinando ad-hoc..."
-codesign --force --deep --sign - "$APP_BUNDLE"
+SIGN_ID="${SIXTHSENSE_SIGN_ID:-$(security find-identity -v -p codesigning 2>/dev/null \
+    | awk -F'"' '/Apple Development/ {print $2; exit}')}"
+SIGN_ID="${SIGN_ID:--}"
+
+if [[ "$SIGN_ID" == "-" ]]; then
+    echo "▶ Assinando ad-hoc (sem certificado — Acessibilidade será pedida a cada build)..."
+else
+    echo "▶ Assinando com \"$SIGN_ID\"..."
+fi
+codesign --force --deep --sign "$SIGN_ID" "$APP_BUNDLE"
 codesign --verify --verbose=2 "$APP_BUNDLE" 2>&1 | sed 's/^/  /'
 
 # ---------- Step 4: install ----------
@@ -107,7 +116,7 @@ if [[ "$DO_INSTALL" -eq 1 ]]; then
     fi
 
     # Re-codesign after install — rsync pode invalidar a signature.
-    codesign --force --deep --sign - "$INSTALL_DEST"
+    codesign --force --deep --sign "$SIGN_ID" "$INSTALL_DEST"
     echo "  instalado"
 fi
 

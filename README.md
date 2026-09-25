@@ -76,7 +76,7 @@ swift test
 ```
 
 O script `dev.sh` empacota o binário em `~/Applications/SixthSense.app`
-com assinatura ad-hoc e path fixo. Isso permite que a permissão de
+com assinatura estável e path fixo. Isso permite que a permissão de
 Acessibilidade concedida **persista entre rebuilds** — veja a seção
 de permissões abaixo.
 
@@ -103,17 +103,20 @@ A solução está no script `scripts/build-app.sh`, que monta um
 
 - **Path fixo**: `~/Applications/SixthSense.app`
 - **Bundle ID estável**: `com.lucasstop.sixthsense`
-- **Assinatura ad-hoc**: `codesign --force --deep --sign -`
+- **Assinatura com certificado**: primeira identidade "Apple Development"
+  do keychain (ou `SIXTHSENSE_SIGN_ID`). Ad-hoc (`--sign -`) não serve: o
+  requisito vira o cdhash, que muda a cada build, e a Acessibilidade volta
+  a ser pedida mesmo com a chave ligada em Ajustes.
 
 Fluxo de setup (apenas uma vez):
 
 1. `./scripts/dev.sh` — compila e abre o app.
-2. Ajustes do Sistema → Privacidade e Segurança → Acessibilidade.
-3. Clique em "+" e adicione `~/Applications/SixthSense.app`.
-4. Reinicie o app (ou rode `./scripts/dev.sh` de novo).
+2. Na Configuração Inicial, clique em "Conceder acesso" na Câmera e na
+   Acessibilidade.
+3. No aviso do macOS, abra os Ajustes e ative o SixthSense na lista.
 
 A partir daí, qualquer `./scripts/dev.sh` posterior preserva a
-autorização automaticamente — o bundle ID + assinatura ad-hoc +
+autorização automaticamente — o bundle ID + certificado +
 path continuam idênticos entre builds.
 
 Você pode conferir o status em tempo real no **Modo Treinamento
