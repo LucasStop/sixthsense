@@ -1,0 +1,68 @@
+name: issue-flow
+
+# Regras do fluxo de issues (vale a partir da issue FIRST_ISSUE):
+# 1. Criar a branch pela issue move o cartão para In progress.
+# 2. Issue só fecha por PR; fechamento manual como "completed" é reaberto.
+
+on:
+  issues:
+    types: [closed]
+  create:
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  FIRST_ISSUE: 1
+
+jobs:
+  require-pr-to-close:
+    if: >-
+      github.event_name == 'issues'
+      && github.event.issue.state_reason == 'completed'
+      && !contains(github.event.issue.labels.*.name, 'tarefa-mae')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reabrir issue fechada sem PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          N: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          [ "$N" -ge "$FIRST_ISSUE" ] || exit 0
+          closer=$(gh api graphql -F n="$N" -F o="${REPO%/*}" -F r="${REPO#*/}" -f query='
+            query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){issue(number:$n){
+              timelineItems(itemTypes:CLOSED_EVENT,last:1){nodes{... on ClosedEvent{closer{__typename}}}}}}}' \
+            --jq '.data.repository.issue.timelineItems.nodes[0].closer.__typename // "none"')
+          if [ "$closer" != "PullRequest" ]; then
+            gh issue reopen "$N" --repo "$REPO" \
+              --comment "Reaberta: issue só fecha por PR com \`Closes #$N\` (ou como \"not planned\"). Abra a branch por esta issue e o PR a partir dela."
+          fi
+
+  in-progress-on-branch:
+    if: github.event_name == 'create' && github.ref_type == 'branch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mover cartão para In progress
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+          BRANCH: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          n=$(printf '%s' "$BRANCH" | sed -nE 's#^([^/]+/)?([0-9]+)-.*#\2#p')
+          [ -n "$n" ] && [ "$n" -ge "$FIRST_ISSUE" ] || exit 0
+          [ -n "$GH_TOKEN" ] || { echo "::warning::secret PROJECT_TOKEN ausente"; exit 0; }
+          data=$(gh api graphql -F n="$n" -F o="${REPO%/*}" -F r="${REPO#*/}" -f query='
+            query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){issue(number:$n){
+              projectItems(first:5){nodes{id project{id field(name:"Status"){... on ProjectV2SingleSelectField{id options{id name}}}}
+              fieldValueByName(name:"Status"){... on ProjectV2ItemFieldSingleSelectValue{name}}}}}}}')
+          item=$(jq -c '.data.repository.issue.projectItems.nodes[0] // empty' <<<"$data")
+          [ -n "$item" ] || { echo "issue #$n fora do Project"; exit 0; }
+          cur=$(jq -r '.fieldValueByName.name // "Todo"' <<<"$item")
+          [ "$cur" = "Todo" ] || { echo "cartão já em $cur"; exit 0; }
+          gh api graphql -f query='
+            mutation($p:ID!,$i:ID!,$f:ID!,$o:String!){updateProjectV2ItemFieldValue(input:{projectId:$p,itemId:$i,fieldId:$f,value:{singleSelectOptionId:$o}}){projectV2Item{id}}}' \
+            -f p="$(jq -r .project.id <<<"$item")" -f i="$(jq -r .id <<<"$item")" \
+            -f f="$(jq -r .project.field.id <<<"$item")" \
+            -f o="$(jq -r '.project.field.options[]|select(.name=="In progress").id' <<<"$item")" >/dev/null
