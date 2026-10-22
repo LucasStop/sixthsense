@@ -6,9 +6,21 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+    groups:
+      all:
+        patterns:
+          - "*"
   - package-ecosystem: swift
     directory: /
     schedule:
       interval: weekly
     cooldown:
       default-days: 7
+    groups:
+      all:
+        patterns:
+          - "*"
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-major
